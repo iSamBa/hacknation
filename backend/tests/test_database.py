@@ -1,9 +1,5 @@
-import uuid
-from datetime import datetime
-
 from sqlalchemy import inspect
-from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 from app.core.database import Base, async_session, engine
 
