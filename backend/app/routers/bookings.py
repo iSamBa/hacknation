@@ -10,10 +10,13 @@ from app.schemas.booking import (
     BookingRequest,
     BookingRequestResponse,
     BookingResponse,
+    ConfirmBookingRequest,
+    ConfirmBookingResponse,
     RankedResultResponse,
     ShortlistItemResponse,
 )
 from app.services.booking_service import (
+    confirm_booking,
     create_booking,
     get_booking,
     get_shortlist,
@@ -82,6 +85,24 @@ async def get_results_endpoint(booking_id: uuid.UUID, db: DbSession):
         )
         for r in results
     ]
+
+
+@router.post(
+    "/{booking_id}/confirm",
+    response_model=ConfirmBookingResponse,
+)
+async def confirm_booking_endpoint(
+    booking_id: uuid.UUID,
+    body: ConfirmBookingRequest,
+    db: DbSession,
+):
+    booking = await get_booking(db, booking_id)
+    if booking is None:
+        raise HTTPException(status_code=404, detail="Booking not found")
+    try:
+        return await confirm_booking(db, booking_id, body.provider_id, body.slot)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
 
 
 @router.get("/{booking_id}", response_model=BookingResponse)

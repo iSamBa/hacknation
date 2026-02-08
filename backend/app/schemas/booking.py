@@ -116,3 +116,18 @@ class RankedResultResponse(BaseModel):
     notes: str | None
     provider_id: uuid.UUID
     call_outcome: str
+
+
+class ConfirmBookingRequest(BaseModel):
+    provider_id: uuid.UUID
+    slot: datetime
+
+
+class ConfirmBookingResponse(BaseModel):
+    id: uuid.UUID
+    status: BookingStatus
+    provider_name: str
+    provider_address: str
+    slot: datetime
+
+    model_config = {"from_attributes": True}
