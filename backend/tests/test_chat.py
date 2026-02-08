@@ -3,7 +3,7 @@ from datetime import datetime
 from unittest.mock import MagicMock, patch
 
 from app.models.booking import Booking, BookingStatus
-from app.schemas.intent import BookingIntent, ChatResponse
+from app.schemas.intent import ChatResponse
 from app.services.user_service import DEFAULT_USER_ID
 
 
@@ -160,3 +160,52 @@ async def test_chat_response_keys_for_conversation(client):
         "status",
         "intent",
     }
+
+
+async def test_chat_passes_history_to_classify(client):
+    chat_response = ChatResponse(
+        is_booking_request=True,
+        reply="A generalist doctor from tomorrow, got it!",
+        service_type="generalist doctor",
+        date="2026-02-09",
+        urgency="specific_date",
+    )
+    booking = _make_booking(service_type="generalist doctor")
+    intent = chat_response.to_booking_intent()
+
+    with (
+        patch(
+            "app.routers.chat.get_or_create_default_user",
+            return_value=_make_user(),
+        ),
+        patch(
+            "app.routers.chat.classify_and_parse",
+            return_value=chat_response,
+        ) as mock_classify,
+        patch(
+            "app.routers.chat.create_booking",
+            return_value=(booking, intent),
+        ),
+    ):
+        response = await client.post(
+            "/api/chat",
+            json={
+                "message": "from tomorrow",
+                "history": [
+                    {"role": "user", "content": "I need a generalist doctor"},
+                    {
+                        "role": "assistant",
+                        "content": "Sure! What date works for you?",
+                    },
+                ],
+            },
+        )
+
+    assert response.status_code == 200
+    mock_classify.assert_awaited_once_with(
+        "from tomorrow",
+        history=[
+            {"role": "user", "content": "I need a generalist doctor"},
+            {"role": "assistant", "content": "Sure! What date works for you?"},
+        ],
+    )

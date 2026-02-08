@@ -35,6 +35,7 @@ export function useChat() {
   const [isLoading, setIsLoading] = useState(false);
   const idCounter = useRef(0);
   const pendingRef = useRef(false);
+  const messagesRef = useRef<ChatMessage[]>([]);
 
   const nextId = () => {
     idCounter.current += 1;
@@ -47,6 +48,10 @@ export function useChat() {
 
     pendingRef.current = true;
 
+    const history = messagesRef.current
+      .filter((m) => !m.error)
+      .map((m) => ({ role: m.role, content: m.content }));
+
     const userMessage: ChatMessage = {
       id: nextId(),
       role: "user",
@@ -54,13 +59,14 @@ export function useChat() {
       timestamp: new Date(),
     };
 
-    setMessages((prev) => [...prev, userMessage]);
+    messagesRef.current = [...messagesRef.current, userMessage];
+    setMessages(messagesRef.current);
     setIsLoading(true);
 
     try {
       const response = await apiPost<ChatMessageResponse>(
         "/api/chat",
-        { message: trimmed },
+        { message: trimmed, history },
       );
 
       const assistantMessage: ChatMessage = {
@@ -72,7 +78,8 @@ export function useChat() {
         timestamp: new Date(),
       };
 
-      setMessages((prev) => [...prev, assistantMessage]);
+      messagesRef.current = [...messagesRef.current, assistantMessage];
+      setMessages(messagesRef.current);
     } catch (err) {
       const errorMessage: ChatMessage = {
         id: nextId(),
@@ -85,7 +92,8 @@ export function useChat() {
         error: true,
       };
 
-      setMessages((prev) => [...prev, errorMessage]);
+      messagesRef.current = [...messagesRef.current, errorMessage];
+      setMessages(messagesRef.current);
     } finally {
       setIsLoading(false);
       pendingRef.current = false;
