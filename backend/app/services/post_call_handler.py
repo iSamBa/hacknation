@@ -7,6 +7,8 @@ from dateutil import parser as dateutil_parser
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.websocket_manager import ws_manager
+from app.models.booking import Booking, BookingStatus
 from app.models.call_result import CallOutcome, CallResult
 
 logger = logging.getLogger(__name__)
@@ -48,6 +50,9 @@ async def update_call_result_from_webhook(
     Looks up the CallResult by conversation_id and updates it with
     extracted data collection fields and analysis results.
 
+    If no CallResult exists, tries to create one by finding the most recent
+    CALLING booking (DEMO MODE for widget-based conversations).
+
     Returns the updated CallResult, or None if not found.
     """
     result = await db.execute(
@@ -57,14 +62,70 @@ async def update_call_result_from_webhook(
     )
     call_result = result.scalar_one_or_none()
 
+    # DEMO MODE: If no CallResult exists, try to find the calling booking and create one
     if call_result is None:
-        logger.warning(
+        logger.info(
             "No CallResult found for conversation_id=%s. "
-            "Data will be logged but not persisted.",
+            "Attempting to create one for DEMO MODE (widget conversation).",
             conversation_id,
         )
-        _log_analysis(conversation_id, analysis)
-        return None
+
+        # Find the most recent booking in CALLING status
+        booking_result = await db.execute(
+            select(Booking)
+            .where(Booking.status == BookingStatus.CALLING)
+            .order_by(Booking.created_at.desc())
+            .limit(1)
+        )
+        booking = booking_result.scalar_one_or_none()
+
+        if booking:
+            # Get the top-ranked provider from this booking
+            from app.models.booking import BookingProvider
+
+            provider_result = await db.execute(
+                select(BookingProvider)
+                .where(
+                    BookingProvider.booking_id == booking.id,
+                    BookingProvider.rank == 1,
+                )
+            )
+            booking_provider = provider_result.scalar_one_or_none()
+
+            if booking_provider:
+                # Create new CallResult for this widget conversation
+                naive_now = datetime.now().replace(tzinfo=None)
+                call_result = CallResult(
+                    booking_id=booking.id,
+                    provider_id=booking_provider.provider_id,
+                    conversation_id=conversation_id,
+                    call_outcome=CallOutcome.CALL_FAILED,  # Will be updated below
+                    started_at=naive_now,
+                    ended_at=naive_now,
+                )
+                db.add(call_result)
+
+                # Mark provider as called
+                booking_provider.was_called = True
+                await db.commit()
+                await db.refresh(call_result)
+
+                logger.info(
+                    "Created CallResult for widget conversation_id=%s, booking=%s",
+                    conversation_id,
+                    booking.id,
+                )
+            else:
+                logger.warning("No rank=1 provider found for booking %s", booking.id)
+                _log_analysis(conversation_id, analysis)
+                return None
+        else:
+            logger.warning(
+                "No booking in CALLING status found for conversation_id=%s",
+                conversation_id,
+            )
+            _log_analysis(conversation_id, analysis)
+            return None
 
     # Update call outcome
     raw_outcome = data_collection.get("call_outcome", "")
@@ -93,6 +154,55 @@ async def update_call_result_from_webhook(
 
     await db.commit()
     await db.refresh(call_result)
+
+    # Notify frontend via WebSocket
+    await ws_manager.send_to_booking(
+        call_result.booking_id,
+        {
+            "type": "call_result_updated",
+            "booking_id": str(call_result.booking_id),
+            "provider_id": str(call_result.provider_id),
+            "outcome": call_result.call_outcome.value,
+        },
+    )
+
+    # Auto-transition booking after call completes
+    booking_result = await db.execute(
+        select(Booking).where(Booking.id == call_result.booking_id)
+    )
+    booking = booking_result.scalar_one_or_none()
+
+    if booking and booking.status == BookingStatus.CALLING:
+        # If appointment was successfully booked (SLOT_OFFERED), go straight to CONFIRMED
+        # Otherwise, go to OPTIONS_READY
+        if call_result.call_outcome == CallOutcome.SLOT_OFFERED:
+            booking.status = BookingStatus.CONFIRMED
+            new_status = BookingStatus.CONFIRMED.value
+
+            logger.info(
+                "Auto-transitioned booking %s to CONFIRMED (appointment booked during call)",
+                call_result.booking_id,
+            )
+        else:
+            booking.status = BookingStatus.OPTIONS_READY
+            new_status = BookingStatus.OPTIONS_READY.value
+
+            logger.info(
+                "Auto-transitioned booking %s to OPTIONS_READY (no appointment booked)",
+                call_result.booking_id,
+            )
+
+        await db.commit()
+
+        # Notify frontend of status change
+        await ws_manager.send_to_booking(
+            call_result.booking_id,
+            {
+                "type": "status",
+                "status": new_status,
+                "booking_id": str(call_result.booking_id),
+            },
+        )
 
     _log_analysis(conversation_id, analysis)
     logger.info(

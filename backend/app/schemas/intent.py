@@ -55,6 +55,10 @@ class ChatResponse(BaseModel):
     reply: str = Field(
         description="Friendly reply to the user",
     )
+    user_name: str | None = Field(
+        None,
+        description="User's name if they provided it in the conversation",
+    )
     service_type: str | None = Field(
         None,
         description="Type of service if booking request (e.g. dentist, plumber)",

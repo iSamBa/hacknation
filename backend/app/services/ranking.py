@@ -36,6 +36,8 @@ DEFAULT_TOP_N = 5
 def earliest_score(slot: datetime, max_days: int = MAX_DAYS_AHEAD) -> float:
     """Score 0-1: sooner slots score higher. Slots beyond *max_days* score 0."""
     now = datetime.now(timezone.utc)
+    if slot.tzinfo is None:
+        slot = slot.replace(tzinfo=timezone.utc)
     delta = slot - now
     days_until = delta.total_seconds() / 86400
     if days_until <= 0:

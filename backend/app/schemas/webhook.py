@@ -17,6 +17,9 @@ class ConfirmSlotRequest(BaseModel):
     date: str = Field(..., min_length=1)
     time: str = Field(..., min_length=1)
     provider_notes: str | None = None
+    provider_name: str | None = None
+    provider_address: str | None = None
+    service_type: str | None = None
 
 
 class ConfirmSlotResponse(BaseModel):

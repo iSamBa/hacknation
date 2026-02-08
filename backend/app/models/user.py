@@ -1,5 +1,5 @@
 from sqlalchemy import ARRAY, Float, String, text
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
 
@@ -42,3 +42,9 @@ class UserProfile(Base):
         String(20), server_default=text("'driving'"), default="driving"
     )
     google_calendar_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+    oauth_tokens = relationship(
+        "OAuthToken",
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )

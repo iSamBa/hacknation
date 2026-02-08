@@ -5,10 +5,18 @@ import pytest
 
 @pytest.mark.asyncio
 async def test_check_calendar_returns_available(client):
-    response = await client.post(
-        "/api/webhooks/tools/check_calendar",
-        json={"date": "2026-02-10", "time": "14:00"},
-    )
+    with patch(
+        "app.routers.webhooks.check_user_availability",
+        return_value={
+            "available": True,
+            "calendar_connected": True,
+            "conflicts": [],
+        },
+    ):
+        response = await client.post(
+            "/api/webhooks/tools/check_calendar",
+            json={"date": "2026-02-10", "time": "14:00"},
+        )
     assert response.status_code == 200
     data = response.json()
     assert data["available"] is True
@@ -19,7 +27,13 @@ async def test_check_calendar_returns_available(client):
 async def test_check_calendar_unavailable(client):
     with patch(
         "app.routers.webhooks.check_user_availability",
-        return_value=False,
+        return_value={
+            "available": False,
+            "calendar_connected": True,
+            "conflicts": [
+                {"start": "2026-02-10T14:00:00Z", "end": "2026-02-10T15:00:00Z"}
+            ],
+        },
     ):
         response = await client.post(
             "/api/webhooks/tools/check_calendar",
@@ -28,6 +42,7 @@ async def test_check_calendar_unavailable(client):
     assert response.status_code == 200
     data = response.json()
     assert data["available"] is False
+    assert len(data["conflicts"]) == 1
 
 
 @pytest.mark.asyncio

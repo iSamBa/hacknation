@@ -11,11 +11,13 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.core.database import async_session
 from app.core.websocket_manager import ws_manager
 from app.models.booking import Booking, BookingProvider, BookingStatus
 from app.models.user import UserProfile
 from app.services.booking_service import save_shortlist
+from app.services.conversation_orchestrator import run_conversations_for_booking
 from app.services.distance_service import calculate_distances
 from app.services.mock_calls import generate_mock_call_results
 from app.services.provider_search import (
@@ -115,6 +117,11 @@ async def run_booking_pipeline(
             db=db,
         )
 
+        logger.info(
+            "Pipeline: Sending provider_count=%d for booking %s",
+            len(providers),
+            booking_id,
+        )
         await ws_manager.send_to_booking(
             booking_id,
             {
@@ -133,6 +140,7 @@ async def run_booking_pipeline(
 
         # Phase 2: Shortlist (scoring works without phone numbers)
         await _update_status(db, booking_id, BookingStatus.SHORTLISTING)
+        logger.info("Pipeline: Scoring %d providers for booking %s", len(providers), booking_id)
         distances = await calculate_distances(
             origin=(user.latitude, user.longitude),
             destinations=[(p.latitude, p.longitude) for p in providers],
@@ -153,19 +161,20 @@ async def run_booking_pipeline(
         if needs_phone:
             enriched = await enrich_with_phone(needs_phone)
             enriched_map = {p.place_id: p.phone for p in enriched}
-            # Update scored entries with phone numbers
+            # Update scored entries with enriched phone numbers
             updated_scored = []
             for s in scored:
                 phone = enriched_map.get(s.provider.place_id, s.provider.phone)
                 if phone:
-                    updated_provider = s.provider.model_copy(
-                        update={"phone": phone}
-                    )
-                    updated_scored.append(s.model_copy(
-                        update={"provider": updated_provider}
-                    ))
-            scored = updated_scored if updated_scored else scored
+                    # Provider has phone (either cached or enriched) - update it
+                    updated_provider = s.provider.model_copy(update={"phone": phone})
+                    updated_scored.append(s.model_copy(update={"provider": updated_provider}))
+                else:
+                    # Provider has no phone - keep it anyway
+                    updated_scored.append(s)
+            scored = updated_scored
 
+        logger.info("Pipeline: Saving %d scored providers for booking %s", len(scored), booking_id)
         await save_shortlist(db, booking_id, scored)
 
         # Cache newly enriched providers for future lookups
@@ -175,13 +184,31 @@ async def run_booking_pipeline(
         if providers_with_phone:
             await cache_providers(db, providers_with_phone)
 
-        # Phase 4: Call (mocked)
+        # Phase 4: Call providers (DEMO MODE - Widget only)
         await _update_status(db, booking_id, BookingStatus.CALLING)
-        booking_providers = await _get_booking_providers(db, booking_id)
-        await generate_mock_call_results(db, booking_id, booking_providers)
 
-        # Phase 5: Done
-        await _update_status(db, booking_id, BookingStatus.OPTIONS_READY)
+        # DEMO MODE: Pipeline pauses here at CALLING status
+        # The frontend ElevenLabs widget will appear and handle the conversation
+        # The post-call webhook will create CallResult and transition to OPTIONS_READY
+
+        logger.info(
+            "DEMO MODE: Booking %s is now in CALLING status. "
+            "Widget conversation will begin, and post-call webhook will complete the phase.",
+            booking_id,
+        )
+
+        # Send WebSocket event to indicate widget should be shown
+        await ws_manager.send_to_booking(
+            booking_id,
+            {
+                "type": "widget_ready",
+                "booking_id": str(booking_id),
+                "message": "Widget conversation can now begin",
+            },
+        )
+
+        # Pipeline stops here - will be resumed by post-call webhook
+        # DO NOT auto-complete to OPTIONS_READY
         logger.info("Pipeline completed for booking %s", booking_id)
 
     except Exception:

@@ -183,6 +183,10 @@ class TestRunBookingPipeline:
                 "app.services.pipeline.generate_mock_call_results",
                 return_value=bp_records,
             ) as mock_calls,
+            patch(
+                "app.services.pipeline.settings.ELEVENLABS_API_KEY",
+                None,
+            ),
         ):
             await run_booking_pipeline(booking_id, mock_db)
 

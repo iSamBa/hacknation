@@ -1,4 +1,5 @@
 import uuid
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from starlette.testclient import TestClient
@@ -15,7 +16,8 @@ def _reset_ws_manager():
 
 
 class TestBookingStatusWebSocket:
-    def test_connect_registers_connection(self):
+    @patch("app.routers.ws.get_booking", new_callable=AsyncMock, return_value=None)
+    def test_connect_registers_connection(self, _mock_get):
         booking_id = uuid.uuid4()
         client = TestClient(app)
 
