@@ -8,6 +8,8 @@ from app.config import settings
 from app.core.database import Base
 
 # Import all models here for Alembic autogenerate to detect them.
+from app.models.booking import Booking, BookingProvider  # noqa: F401
+from app.models.provider import Provider  # noqa: F401
 from app.models.user import UserProfile  # noqa: F401
 
 config = context.config
