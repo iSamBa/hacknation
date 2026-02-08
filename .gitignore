@@ -2,6 +2,7 @@
 .serena
 backlog
 backend/.env
+.env.local
 
 # Node
 node_modules/
