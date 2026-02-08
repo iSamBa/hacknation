@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   ArrowLeftIcon,
@@ -33,6 +33,10 @@ import {
 } from "@/components/ui/card";
 
 const TERMINAL_STATUSES = new Set(["options_ready", "confirmed", "cancelled"]);
+const HAS_SHORTLIST_DATA = new Set([
+  "shortlisting", "calling", "collecting", "ranking",
+  "options_ready", "confirmed",
+]);
 
 interface BookingDetailViewProps {
   bookingId: string;
@@ -47,7 +51,6 @@ export function BookingDetailView({ bookingId }: BookingDetailViewProps) {
   const [confirmation, setConfirmation] =
     useState<ConfirmBookingResponse | null>(null);
   const { status: wsStatus, providerCount } = useBookingStatus(bookingId);
-  const hasRefetchedRef = useRef(false);
 
   const displayStatus = confirmation
     ? "confirmed"
@@ -70,10 +73,9 @@ export function BookingDetailView({ bookingId }: BookingDetailViewProps) {
     fetchShortlist();
   }, [bookingId, fetchShortlist]);
 
-  // Re-fetch shortlist when pipeline reaches a terminal state
+  // Re-fetch shortlist as each pipeline phase completes
   useEffect(() => {
-    if (wsStatus && TERMINAL_STATUSES.has(wsStatus) && !hasRefetchedRef.current) {
-      hasRefetchedRef.current = true;
+    if (wsStatus && HAS_SHORTLIST_DATA.has(wsStatus)) {
       fetchShortlist();
     }
   }, [wsStatus, fetchShortlist]);
