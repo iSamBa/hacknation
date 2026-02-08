@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.core.database import engine
-from app.routers import bookings, chat, users, ws
+from app.routers import bookings, chat, users, webhooks, ws
 from app.services.pipeline import shutdown_pipeline_tasks
 
 
@@ -36,6 +36,7 @@ app.include_router(users.router)
 app.include_router(bookings.router)
 app.include_router(chat.router)
 app.include_router(ws.router)
+app.include_router(webhooks.router)
 
 
 @app.get("/health")
