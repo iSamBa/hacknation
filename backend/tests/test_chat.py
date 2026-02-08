@@ -7,9 +7,12 @@ from app.schemas.intent import ChatResponse
 from app.services.user_service import DEFAULT_USER_ID
 
 
-def _make_user() -> MagicMock:
+def _make_user(**overrides) -> MagicMock:
     user = MagicMock()
     user.id = DEFAULT_USER_ID
+    user.name = overrides.get("name", "Default User")
+    user.preferred_times = overrides.get("preferred_times", [])
+    user.preferred_days = overrides.get("preferred_days", [])
     return user
 
 
@@ -78,7 +81,7 @@ async def test_chat_booking_request_creates_booking(client):
     with (
         patch(
             "app.routers.chat.get_or_create_default_user",
-            return_value=_make_user(),
+            return_value=_make_user(name="Alice"),
         ),
         patch(
             "app.routers.chat.classify_and_parse",
@@ -176,7 +179,7 @@ async def test_chat_passes_history_to_classify(client):
     with (
         patch(
             "app.routers.chat.get_or_create_default_user",
-            return_value=_make_user(),
+            return_value=_make_user(name="Alice"),
         ),
         patch(
             "app.routers.chat.classify_and_parse",
@@ -208,4 +211,7 @@ async def test_chat_passes_history_to_classify(client):
             {"role": "user", "content": "I need a generalist doctor"},
             {"role": "assistant", "content": "Sure! What date works for you?"},
         ],
+        user_name="Alice",
+        preferred_times=None,
+        preferred_days=None,
     )

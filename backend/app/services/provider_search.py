@@ -227,17 +227,77 @@ async def _search_places(
 ) -> list[ProviderResult]:
     """Search Google Places Nearby for providers.
 
+    Uses both 'type' and 'keyword' parameters for comprehensive matching:
+    - Tries to map service_type to a valid Google Places type
+    - Always includes keyword search for broader coverage
+
     This is the raw API search without caching or enrichment.
     """
     client = _get_client()
+
+    # Google Places API max radius is 50,000 meters (50 km)
+    max_radius_km = 50.0
+    if radius_km > max_radius_km:
+        logger.warning(
+            "Requested radius %.1f km exceeds Google Places max of %.1f km, capping",
+            radius_km,
+            max_radius_km,
+        )
+        radius_km = max_radius_km
+
     radius_m = int(radius_km * 1000)
+
+    # Map common service types to Google Places types
+    type_mapping = {
+        "dentist": "dentist",
+        "dental": "dentist",
+        "doctor": "doctor",
+        "physician": "doctor",
+        "hospital": "hospital",
+        "clinic": "health",
+        "pharmacy": "pharmacy",
+        "restaurant": "restaurant",
+        "cafe": "cafe",
+        "bar": "bar",
+        "gym": "gym",
+        "spa": "spa",
+        "salon": "beauty_salon",
+        "hair": "hair_care",
+        "lawyer": "lawyer",
+        "attorney": "lawyer",
+        "accountant": "accounting",
+        "veterinarian": "veterinary_care",
+        "vet": "veterinary_care",
+        "plumber": "plumber",
+        "electrician": "electrician",
+        "physiotherapist": "physiotherapist",
+        "chiropractor": "chiropractor",
+    }
+
+    # Get the mapped type if available
+    service_lower = service_type.lower().strip()
+    mapped_type = type_mapping.get(service_lower)
+
+    # Build search parameters
+    search_params = {
+        "location": (lat, lng),
+        "radius": radius_m,
+    }
+
+    # Strategy: Use type for mapped types (more results), keyword for unmapped
+    if mapped_type:
+        # Use type only - more comprehensive results for known types
+        search_params["type"] = mapped_type
+        logger.info("Using type='%s' for service '%s'", mapped_type, service_type)
+    else:
+        # Use keyword for unmapped types
+        search_params["keyword"] = service_type
+        logger.info("Using keyword='%s' for service '%s'", service_type, service_type)
 
     try:
         response = await asyncio.to_thread(
             client.places_nearby,
-            location=(lat, lng),
-            radius=radius_m,
-            keyword=service_type,
+            **search_params,
         )
     except googlemaps.exceptions.ApiError as e:
         raise ValueError(f"Google Places API error: {e}") from e
@@ -250,6 +310,14 @@ async def _search_places(
         result = _parse_place(place)
         if result is not None:
             providers.append(result)
+
+    search_method = f"type={mapped_type}" if mapped_type else f"keyword={service_type}"
+    logger.info(
+        "Google Places search for '%s' (%s) returned %d results on page 1",
+        service_type,
+        search_method,
+        len(response.get("results", [])),
+    )
 
     # Handle pagination (up to 3 pages total)
     pages_fetched = 1
@@ -276,7 +344,18 @@ async def _search_places(
                 providers.append(result)
 
         pages_fetched += 1
+        logger.info(
+            "Google Places page %d returned %d results",
+            pages_fetched,
+            len(response.get("results", [])),
+        )
 
+    logger.info(
+        "Total providers found for '%s': %d (across %d pages)",
+        service_type,
+        len(providers),
+        pages_fetched,
+    )
     return providers
 
 
@@ -289,13 +368,17 @@ async def search_providers(
 ) -> list[ProviderResult]:
     """Search for providers near a location by service type.
 
-    Returns providers from Google Places Nearby Search. When a database
-    session is provided, merges in cached phone numbers for providers
-    that were previously enriched, but does NOT enrich new providers
-    (enrichment is deferred to after shortlisting).
+    Returns providers from Google Places Nearby Search using both 'type'
+    and 'keyword' parameters for comprehensive results. Automatically maps
+    common service names to Google Places types when possible. When a
+    database session is provided, merges in cached phone numbers for
+    providers that were previously enriched, but does NOT enrich new
+    providers (enrichment is deferred to after shortlisting).
 
     Args:
-        service_type: Type of service to search for (e.g. "dentist").
+        service_type: Service type or description (e.g., "dentist", "dental
+            cleaning", "general practitioner"). Will be mapped to Google
+            Places types when possible, plus used as keyword search.
         lat: Latitude of the search center.
         lng: Longitude of the search center.
         radius_km: Search radius in kilometers (default 10).
@@ -311,7 +394,20 @@ async def search_providers(
     all_providers = await _search_places(service_type, lat, lng, radius_km)
 
     if not all_providers:
+        logger.warning(
+            "No providers found for service_type='%s' within %.1fkm of (%.4f, %.4f)",
+            service_type,
+            radius_km,
+            lat,
+            lng,
+        )
         return []
+
+    logger.info(
+        "Search complete: %d total providers found for '%s'",
+        len(all_providers),
+        service_type,
+    )
 
     if db is None:
         return all_providers

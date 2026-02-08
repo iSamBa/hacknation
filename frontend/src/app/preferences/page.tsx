@@ -136,7 +136,7 @@ export default function PreferencesPage() {
   }
 
   return (
-    <div className="mx-auto max-w-2xl space-y-6">
+    <div className="mx-auto max-w-7xl space-y-6">
       <div>
         <h1 className="text-2xl font-semibold">Preferences</h1>
         <p className="mt-1 text-muted-foreground">
@@ -144,122 +144,130 @@ export default function PreferencesPage() {
         </p>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Location</CardTitle>
-          <CardDescription>
-            Set your address for finding nearby providers.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-2">
-            <Label htmlFor="address">Address</Label>
-            <AddressAutocomplete
-              value={address}
-              onChange={setAddress}
-              onAddressSelect={(data) => {
-                setLatitude(data.latitude);
-                setLongitude(data.longitude);
-              }}
-            />
-          </div>
-        </CardContent>
-      </Card>
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        {/* Left Column */}
+        <div className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Location</CardTitle>
+              <CardDescription>
+                Set your address for finding nearby providers.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-2">
+                <Label htmlFor="address">Address</Label>
+                <AddressAutocomplete
+                  value={address}
+                  onChange={setAddress}
+                  onAddressSelect={(data) => {
+                    setLatitude(data.latitude);
+                    setLongitude(data.longitude);
+                  }}
+                />
+              </div>
+            </CardContent>
+          </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Scheduling</CardTitle>
-          <CardDescription>
-            Choose when you prefer appointments.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          <TimePreferences
-            value={preferredTimes}
-            onChange={setPreferredTimes}
-          />
-          <Separator />
-          <DaySelector value={preferredDays} onChange={setPreferredDays} />
-        </CardContent>
-      </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle>Scheduling</CardTitle>
+              <CardDescription>
+                Choose when you prefer appointments.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <TimePreferences
+                value={preferredTimes}
+                onChange={setPreferredTimes}
+              />
+              <Separator />
+              <DaySelector value={preferredDays} onChange={setPreferredDays} />
+            </CardContent>
+          </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Provider Preferences</CardTitle>
-          <CardDescription>
-            Set your distance and quality thresholds.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          <DistanceSlider value={maxDistance} onChange={setMaxDistance} />
-          <Separator />
-          <RatingSlider value={minRating} onChange={setMinRating} />
-          <Separator />
-          <div className="space-y-2">
-            <Label htmlFor="shortlist-count">Shortlist size</Label>
-            <p className="text-sm text-muted-foreground">
-              Number of providers to shortlist for each booking.
-            </p>
-            <Input
-              id="shortlist-count"
-              type="number"
-              min={1}
-              max={50}
-              value={shortlistCount}
-              onChange={(e) => setShortlistCount(Number(e.target.value))}
-              className="w-24"
-            />
-          </div>
-          <Separator />
-          <div className="space-y-2">
-            <Label>Transport mode</Label>
-            <p className="text-sm text-muted-foreground">
-              How you usually travel to appointments. Affects travel time
-              estimates.
-            </p>
-            <Select value={transportMode} onValueChange={setTransportMode}>
-              <SelectTrigger className="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {TRANSPORT_MODES.map((mode) => (
-                  <SelectItem key={mode.value} value={mode.value}>
-                    {mode.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        </CardContent>
-      </Card>
+          <CalendarConnection />
+        </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Language</CardTitle>
-          <CardDescription>
-            Preferred language for provider communication.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-2">
-            <Label>Language</Label>
-            <Select value={language} onValueChange={setLanguage}>
-              <SelectTrigger className="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {LANGUAGES.map((lang) => (
-                  <SelectItem key={lang.value} value={lang.value}>
-                    {lang.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        </CardContent>
-      </Card>
+        {/* Right Column */}
+        <div className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Provider Preferences</CardTitle>
+              <CardDescription>
+                Set your distance and quality thresholds.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <DistanceSlider value={maxDistance} onChange={setMaxDistance} />
+              <Separator />
+              <RatingSlider value={minRating} onChange={setMinRating} />
+              <Separator />
+              <div className="space-y-2">
+                <Label htmlFor="shortlist-count">Shortlist size</Label>
+                <p className="text-sm text-muted-foreground">
+                  Number of providers to shortlist for each booking.
+                </p>
+                <Input
+                  id="shortlist-count"
+                  type="number"
+                  min={1}
+                  max={50}
+                  value={shortlistCount}
+                  onChange={(e) => setShortlistCount(Number(e.target.value))}
+                  className="w-24"
+                />
+              </div>
+              <Separator />
+              <div className="space-y-2">
+                <Label>Transport mode</Label>
+                <p className="text-sm text-muted-foreground">
+                  How you usually travel to appointments. Affects travel time
+                  estimates.
+                </p>
+                <Select value={transportMode} onValueChange={setTransportMode}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {TRANSPORT_MODES.map((mode) => (
+                      <SelectItem key={mode.value} value={mode.value}>
+                        {mode.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </CardContent>
+          </Card>
 
-      <CalendarConnection />
+          <Card>
+            <CardHeader>
+              <CardTitle>Language</CardTitle>
+              <CardDescription>
+                Preferred language for provider communication.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-2">
+                <Label>Language</Label>
+                <Select value={language} onValueChange={setLanguage}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {LANGUAGES.map((lang) => (
+                      <SelectItem key={lang.value} value={lang.value}>
+                        {lang.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
 
       <div className="flex justify-end pb-6">
         <Button onClick={handleSave} disabled={saving}>

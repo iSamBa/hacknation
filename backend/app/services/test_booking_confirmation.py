@@ -207,21 +207,28 @@ class TestConfirmBooking:
             await confirm_booking(db, booking_id, provider_id, wrong_slot)
 
 
-class TestCalendarServiceStub:
+class TestCalendarEventCreation:
     @pytest.mark.asyncio
-    async def test_returns_event_dict(self):
+    async def test_skips_when_calendar_not_connected(self):
+        """Test that calendar event creation returns None when not connected."""
         from app.services.calendar_service import create_calendar_event
+
+        # Mock DB that returns no OAuth token
+        db = AsyncMock()
+        result_mock = MagicMock()
+        result_mock.scalar_one_or_none.return_value = None
+        db.execute = AsyncMock(return_value=result_mock)
 
         slot = datetime(2026, 3, 15, 10, 0, tzinfo=timezone.utc)
         event = await create_calendar_event(
-            user_name="Test User",
+            db=db,
+            user_id=str(uuid.uuid4()),
             provider_name="Test Dentist",
             provider_address="123 Main St",
             slot=slot,
             service_type="dentist",
+            booking_id=str(uuid.uuid4()),
         )
 
-        assert event["summary"] == "dentist - Test Dentist"
-        assert event["location"] == "123 Main St"
-        assert "2026-03-15" in event["start"]
-        assert "Test Dentist" in event["description"]
+        # Should return None when calendar not connected
+        assert event is None

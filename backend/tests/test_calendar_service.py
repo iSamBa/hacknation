@@ -138,7 +138,7 @@ async def test_check_availability_with_conflicts(
 async def test_check_availability_api_error_graceful_degradation(
     mock_build, mock_db, mock_oauth_token
 ):
-    """Test availability check with API error returns available."""
+    """Test availability check with API error fails closed (returns unavailable)."""
     # Setup: Token found but API raises exception
     mock_result = MagicMock()
     mock_result.scalar_one_or_none.return_value = mock_oauth_token
@@ -153,11 +153,134 @@ async def test_check_availability_api_error_graceful_degradation(
     # Execute
     result = await check_availability(mock_db, user_id, start, end)
 
-    # Assert: Graceful degradation
-    assert result["available"] is True
+    # Assert: Fail closed - assume busy for safety
+    assert result["available"] is False
     assert result["calendar_connected"] is True
     assert result["conflicts"] == []
     assert "failed" in result["message"]
+    assert "busy for safety" in result["message"]
+
+
+@pytest.mark.asyncio
+@patch("app.services.calendar_service.build")
+async def test_check_availability_with_api_errors_field(
+    mock_build, mock_db, mock_oauth_token
+):
+    """Test availability check when Google API returns errors field."""
+    # Setup: Token found but API returns errors in response
+    mock_result = MagicMock()
+    mock_result.scalar_one_or_none.return_value = mock_oauth_token
+    mock_db.execute.return_value = mock_result
+
+    mock_service = MagicMock()
+    mock_freebusy = MagicMock()
+    # API returns errors field - simulates permission or access issues
+    mock_freebusy.query.return_value.execute.return_value = {
+        "calendars": {
+            "primary": {
+                "errors": [
+                    {
+                        "domain": "global",
+                        "reason": "forbidden",
+                        "message": "Forbidden",
+                    }
+                ],
+                "busy": [],
+            }
+        }
+    }
+    mock_service.freebusy.return_value = mock_freebusy
+    mock_build.return_value = mock_service
+
+    user_id = str(mock_oauth_token.user_id)
+    start = datetime.now(tz=timezone.utc)
+    end = start + timedelta(hours=1)
+
+    # Execute
+    result = await check_availability(mock_db, user_id, start, end)
+
+    # Assert: Fail closed when errors field present
+    assert result["available"] is False
+    assert result["calendar_connected"] is True
+    assert result["conflicts"] == []
+    assert "failed" in result["message"]
+    assert "busy for safety" in result["message"]
+
+
+@pytest.mark.asyncio
+@patch("app.services.calendar_service.build")
+async def test_check_availability_keyerror_fails_closed(
+    mock_build, mock_db, mock_oauth_token
+):
+    """Test availability check with malformed API response fails closed."""
+    # Setup: Token found but API returns malformed response
+    mock_result = MagicMock()
+    mock_result.scalar_one_or_none.return_value = mock_oauth_token
+    mock_db.execute.return_value = mock_result
+
+    mock_service = MagicMock()
+    mock_freebusy = MagicMock()
+    # Malformed response with busy periods in wrong format (triggers KeyError)
+    mock_freebusy.query.return_value.execute.return_value = {
+        "calendars": {
+            "primary": {
+                "busy": [
+                    # Missing "start" and "end" keys - will cause KeyError
+                    {"invalid_key": "value"}
+                ]
+            }
+        }
+    }
+    mock_service.freebusy.return_value = mock_freebusy
+    mock_build.return_value = mock_service
+
+    user_id = str(mock_oauth_token.user_id)
+    start = datetime.now(tz=timezone.utc)
+    end = start + timedelta(hours=1)
+
+    # Execute
+    result = await check_availability(mock_db, user_id, start, end)
+
+    # Assert: Fail closed on malformed response
+    assert result["available"] is False
+    assert result["calendar_connected"] is True
+    assert result["conflicts"] == []
+    assert "failed" in result["message"]
+
+
+@pytest.mark.asyncio
+@patch("app.services.calendar_service.build")
+async def test_check_availability_network_error_fails_closed(
+    mock_build, mock_db, mock_oauth_token
+):
+    """Test availability check with network error fails closed."""
+    # Setup: Token found but network error occurs
+    mock_result = MagicMock()
+    mock_result.scalar_one_or_none.return_value = mock_oauth_token
+    mock_db.execute.return_value = mock_result
+
+    mock_service = MagicMock()
+    mock_freebusy = MagicMock()
+    # Simulate network timeout or connection error
+    mock_freebusy.query.return_value.execute.side_effect = ConnectionError(
+        "Network timeout"
+    )
+    mock_service.freebusy.return_value = mock_freebusy
+    mock_build.return_value = mock_service
+
+    user_id = str(mock_oauth_token.user_id)
+    start = datetime.now(tz=timezone.utc)
+    end = start + timedelta(hours=1)
+
+    # Execute
+    result = await check_availability(mock_db, user_id, start, end)
+
+    # Assert: Fail closed on network error
+    assert result["available"] is False
+    assert result["calendar_connected"] is True
+    assert result["conflicts"] == []
+    assert "failed" in result["message"]
+    assert "busy for safety" in result["message"]
 
 
 @pytest.mark.asyncio

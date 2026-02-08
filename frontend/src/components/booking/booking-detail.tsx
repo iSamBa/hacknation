@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import {
   ArrowLeftIcon,
@@ -23,6 +23,7 @@ import {
   type PhaseData,
 } from "@/components/booking/pipeline-progress";
 import { ConfirmationDialog } from "@/components/booking/confirmation-dialog";
+import { ConversationPlayer } from "@/components/booking/conversation-player";
 import { ResultsList } from "@/components/booking/results-list";
 import { StatusBadge } from "@/components/booking/status-badge";
 import {
@@ -50,11 +51,19 @@ export function BookingDetailView({ bookingId }: BookingDetailViewProps) {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [confirmation, setConfirmation] =
     useState<ConfirmBookingResponse | null>(null);
-  const { status: wsStatus, providerCount } = useBookingStatus(bookingId);
+  const { status: liveStatus, providerCount } = useBookingStatus(bookingId);
 
   const displayStatus = confirmation
     ? "confirmed"
-    : (wsStatus ?? booking?.status ?? null);
+    : (liveStatus ?? booking?.status ?? null);
+
+  const fetchBooking = useCallback(() => {
+    apiGet<BookingDetail>(`/api/bookings/${bookingId}`)
+      .then(setBooking)
+      .catch((err) =>
+        setError(err instanceof Error ? err.message : "Failed to load booking"),
+      );
+  }, [bookingId]);
 
   const fetchShortlist = useCallback(() => {
     apiGet<ShortlistItem[]>(`/api/bookings/${bookingId}/shortlist`)
@@ -65,20 +74,22 @@ export function BookingDetailView({ bookingId }: BookingDetailViewProps) {
   }, [bookingId]);
 
   useEffect(() => {
-    apiGet<BookingDetail>(`/api/bookings/${bookingId}`)
-      .then(setBooking)
-      .catch((err) =>
-        setError(err instanceof Error ? err.message : "Failed to load booking"),
-      );
+    fetchBooking();
     fetchShortlist();
-  }, [bookingId, fetchShortlist]);
+  }, [fetchBooking, fetchShortlist]);
 
-  // Re-fetch shortlist as each pipeline phase completes
+  // Re-fetch booking and shortlist as pipeline status advances (via WS or polling)
+  const lastFetchedStatus = useRef<string | null>(null);
+
   useEffect(() => {
-    if (wsStatus && HAS_SHORTLIST_DATA.has(wsStatus)) {
+    if (!liveStatus || liveStatus === lastFetchedStatus.current) return;
+    lastFetchedStatus.current = liveStatus;
+
+    if (HAS_SHORTLIST_DATA.has(liveStatus)) {
       fetchShortlist();
     }
-  }, [wsStatus, fetchShortlist]);
+    fetchBooking();
+  }, [liveStatus, fetchShortlist, fetchBooking]);
 
   const phaseData = useMemo<PhaseData | undefined>(() => {
     if (shortlist.length === 0 && !providerCount) return undefined;
@@ -151,6 +162,11 @@ export function BookingDetailView({ bookingId }: BookingDetailViewProps) {
           <PipelineProgress status={displayStatus} phaseData={phaseData} />
         </CardContent>
       </Card>
+
+      {/* Active Conversation Player */}
+      {displayStatus === "calling" && (
+        <ConversationPlayer bookingId={bookingId} />
+      )}
 
       {/* Confirmed Summary */}
       {confirmation && (

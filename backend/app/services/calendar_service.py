@@ -1,7 +1,7 @@
 """Google Calendar API service for availability checking and event creation."""
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
@@ -128,7 +128,23 @@ async def check_availability(
 
         logger.info("Querying FreeBusy API for %s to %s", time_min, time_max)
         result = service.freebusy().query(body=body).execute()
-        busy_periods = result["calendars"]["primary"]["busy"]
+
+        # Check for errors field in response - fail closed if present
+        calendar_data = result.get("calendars", {}).get("primary", {})
+        if "errors" in calendar_data:
+            logger.warning(
+                "Google Calendar API returned errors for user %s: %s",
+                user_id,
+                calendar_data["errors"],
+            )
+            return {
+                "available": False,
+                "calendar_connected": True,
+                "conflicts": [],
+                "message": "Calendar check failed — assuming busy for safety",
+            }
+
+        busy_periods = calendar_data.get("busy", [])
 
         conflicts = [
             {"start": period["start"], "end": period["end"]}
@@ -148,51 +164,109 @@ async def check_availability(
             "conflicts": conflicts,
         }
 
-    except Exception:
-        logger.exception("Error querying Google Calendar API")
-        # Graceful degradation: assume available if API fails
+    except KeyError as e:
+        logger.exception("Malformed response from Google Calendar API: %s", e)
+        # Fail closed: assume busy if response is malformed
         return {
-            "available": True,
+            "available": False,
             "calendar_connected": True,
             "conflicts": [],
-            "message": "Calendar check failed — assuming available",
+            "message": "Calendar check failed — assuming busy for safety",
+        }
+    except Exception:
+        logger.exception("Error querying Google Calendar API")
+        # Fail closed: assume busy if API fails
+        return {
+            "available": False,
+            "calendar_connected": True,
+            "conflicts": [],
+            "message": "Calendar check failed — assuming busy for safety",
         }
 
 
 async def create_calendar_event(
-    user_name: str,
+    db: AsyncSession,
+    user_id: str,
     provider_name: str,
     provider_address: str,
     slot: datetime,
     service_type: str,
-) -> dict:
+    booking_id: str | None = None,
+) -> dict | None:
     """Create a calendar event for a confirmed booking.
 
-    For MVP, this is a stub that logs the event and returns
-    the event details that would be sent to Google Calendar.
-
     Args:
-        user_name: Name of the user.
+        db: Database session.
+        user_id: User UUID.
         provider_name: Name of the provider.
         provider_address: Address of the provider.
         slot: The appointment datetime.
         service_type: Type of service booked.
+        booking_id: Optional booking ID to include in description.
 
     Returns:
-        Dict with event details (stub).
+        Dict with event_id and event_link if successful, None if calendar
+        not connected or API fails.
     """
-    event = {
-        "summary": f"{service_type} - {provider_name}",
-        "location": provider_address,
-        "start": slot.isoformat(),
-        "description": f"Appointment with {provider_name} for {service_type}",
-    }
+    credentials = await get_calendar_credentials(db, user_id)
+    if not credentials:
+        logger.info(
+            "User %s has not connected their calendar, skipping event creation",
+            user_id,
+        )
+        return None
 
-    logger.info(
-        "Calendar event stub: %s at %s on %s",
-        provider_name,
-        provider_address,
-        slot.isoformat(),
-    )
+    try:
+        service = build("calendar", "v3", credentials=credentials)
 
-    return event
+        # Ensure slot is timezone-aware (database stores as naive UTC)
+        if slot.tzinfo is None:
+            slot_utc = slot.replace(tzinfo=timezone.utc)
+        else:
+            slot_utc = slot.astimezone(timezone.utc)
+
+        # Calculate 1-hour duration
+        end_time_utc = slot_utc + timedelta(hours=1)
+
+        # Build event body
+        event_body = {
+            "summary": f"{service_type} - {provider_name}",
+            "location": provider_address,
+            "description": f"Appointment with {provider_name} for {service_type}"
+            + (f"\nBooking ID: {booking_id}" if booking_id else ""),
+            "start": {
+                "dateTime": slot_utc.isoformat(),
+                "timeZone": "UTC",
+            },
+            "end": {
+                "dateTime": end_time_utc.isoformat(),
+                "timeZone": "UTC",
+            },
+        }
+
+        logger.info(
+            "Creating calendar event for %s at %s",
+            provider_name,
+            slot_utc.isoformat(),
+        )
+        event = service.events().insert(
+            calendarId="primary", body=event_body
+        ).execute()
+
+        event_id = event.get("id")
+        event_link = event.get("htmlLink")
+
+        logger.info(
+            "Calendar event created successfully: %s (%s)",
+            event_id,
+            event_link,
+        )
+
+        return {
+            "event_id": event_id,
+            "event_link": event_link,
+        }
+
+    except Exception:
+        logger.exception("Error creating calendar event")
+        return None

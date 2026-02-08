@@ -5,10 +5,13 @@ that integrates with Google Calendar via calendar_service.
 """
 
 import logging
-from datetime import datetime, timedelta
+from datetime import timedelta
+from zoneinfo import ZoneInfo
 
+from dateutil import parser as dateutil_parser
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.services.calendar_service import check_availability
 from app.services.user_service import get_or_create_default_user
 
@@ -33,7 +36,13 @@ async def check_user_availability(
         - message (str, optional): Additional context message.
     """
     # Parse date and time into datetime range (assume 1-hour slot)
-    start = datetime.fromisoformat(f"{date}T{time}")
+    # The ElevenLabs agent may send natural language ("February 9th", "2 PM")
+    # or ISO format ("2026-02-09", "14:00"), so use fuzzy parsing.
+    # IMPORTANT: Make the datetime timezone-aware using the user's timezone
+    # to ensure correct comparison with Google Calendar events.
+    naive_start = dateutil_parser.parse(f"{date} {time}", fuzzy=True)
+    tz = ZoneInfo(settings.DEFAULT_TIMEZONE)
+    start = naive_start.replace(tzinfo=tz)
     end = start + timedelta(hours=1)
 
     # For MVP: use the single default user's ID

@@ -22,11 +22,25 @@ async def chat_endpoint(body: ChatMessageRequest, db: DbSession):
     history = [msg.model_dump() for msg in body.history]
 
     try:
-        chat_response = await classify_and_parse(body.message, history=history)
+        chat_response = await classify_and_parse(
+            body.message,
+            history=history,
+            user_name=user.name,
+            preferred_times=user.preferred_times or None,
+            preferred_days=user.preferred_days or None,
+        )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
 
-    if not chat_response.is_booking_request:
+    # Save user's name if they provided it
+    if chat_response.user_name and chat_response.user_name != user.name:
+        user.name = chat_response.user_name
+        await db.commit()
+        await db.refresh(user)
+
+    # Don't start a booking until we have the user's name
+    name_known = user.name and user.name != "Default User"
+    if not chat_response.is_booking_request or not name_known:
         return ChatMessageResponse(
             is_booking_request=False,
             reply=chat_response.reply,

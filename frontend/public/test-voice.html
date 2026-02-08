@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>ElevenLabs Voice Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+        }
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 5px;
+        }
+        .connected { background: #d4edda; color: #155724; }
+        .disconnected { background: #f8d7da; color: #721c24; }
+        .recording { background: #fff3cd; color: #856404; }
+        button {
+            padding: 10px 20px;
+            margin: 5px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+        #audioPlayer {
+            width: 100%;
+            margin: 20px 0;
+        }
+        .transcript {
+            background: #f8f9fa;
+            padding: 15px;
+            margin: 10px 0;
+            border-left: 4px solid #007bff;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .transcript-entry {
+            margin: 5px 0;
+        }
+        .agent { color: #0056b3; font-weight: bold; }
+        .user { color: #28a745; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <h1>🎙️ ElevenLabs Voice Conversation Test</h1>
+
+    <div id="status" class="status disconnected">Disconnected</div>
+
+    <div>
+        <label>Booking ID:
+            <input type="text" id="bookingId" placeholder="Enter booking ID" style="width: 300px;">
+        </label>
+        <button onclick="connect()">Connect</button>
+        <button onclick="disconnect()">Disconnect</button>
+    </div>
+
+    <div style="margin-top: 20px;">
+        <button id="recordBtn" onclick="toggleRecording()" disabled>🎤 Start Recording</button>
+        <button onclick="stopAudio()">🔇 Stop Audio</button>
+    </div>
+
+    <h3>Agent Audio Output:</h3>
+    <audio id="audioPlayer" controls></audio>
+
+    <h3>Conversation Transcript:</h3>
+    <div id="transcript" class="transcript"></div>
+
+    <script>
+        let ws = null;
+        let mediaRecorder = null;
+        let audioContext = null;
+        let isRecording = false;
+        let audioQueue = [];
+        let isPlaying = false;
+
+        const statusDiv = document.getElementById('status');
+        const recordBtn = document.getElementById('recordBtn');
+        const audioPlayer = document.getElementById('audioPlayer');
+        const transcriptDiv = document.getElementById('transcript');
+
+        function updateStatus(message, className) {
+            statusDiv.textContent = message;
+            statusDiv.className = `status ${className}`;
+        }
+
+        function addTranscript(speaker, text) {
+            const entry = document.createElement('div');
+            entry.className = 'transcript-entry';
+
+            const speakerSpan = document.createElement('span');
+            speakerSpan.className = speaker;
+            speakerSpan.textContent = `[${speaker.toUpperCase()}]: `;
+
+            const textNode = document.createTextNode(text);
+
+            entry.appendChild(speakerSpan);
+            entry.appendChild(textNode);
+            transcriptDiv.appendChild(entry);
+            transcriptDiv.scrollTop = transcriptDiv.scrollHeight;
+        }
+
+        async function connect() {
+            const bookingId = document.getElementById('bookingId').value;
+            if (!bookingId) {
+                alert('Please enter a booking ID');
+                return;
+            }
+
+            updateStatus('Connecting...', 'disconnected');
+
+            ws = new WebSocket(`ws://localhost:8000/ws/bookings/${bookingId}`);
+
+            ws.onopen = () => {
+                updateStatus('Connected - Ready to talk!', 'connected');
+                recordBtn.disabled = false;
+                console.log('WebSocket connected');
+            };
+
+            ws.onmessage = async (event) => {
+                const data = JSON.parse(event.data);
+                console.log('Received:', data.type, data);
+
+                switch(data.type) {
+                    case 'conversation_started':
+                        addTranscript('system', `Conversation started with ${data.provider_name}`);
+                        break;
+
+                    case 'conversation_audio':
+                        // Receive audio from agent
+                        await playAudio(data.audio);
+                        break;
+
+                    case 'conversation_event':
+                        // Receive transcript
+                        if (data.event_type === 'agent_response') {
+                            addTranscript('agent', data.text);
+                        } else if (data.event_type === 'user_transcript') {
+                            addTranscript('user', data.text);
+                        }
+                        break;
+
+                    case 'conversation_ended':
+                        addTranscript('system', `Conversation ended: ${data.outcome}`);
+                        break;
+                }
+            };
+
+            ws.onerror = (error) => {
+                console.error('WebSocket error:', error);
+                updateStatus('Connection error', 'disconnected');
+            };
+
+            ws.onclose = () => {
+                updateStatus('Disconnected', 'disconnected');
+                recordBtn.disabled = true;
+                console.log('WebSocket disconnected');
+            };
+        }
+
+        function disconnect() {
+            if (ws) {
+                ws.close();
+                ws = null;
+            }
+            if (mediaRecorder && isRecording) {
+                mediaRecorder.stop();
+            }
+        }
+
+        async function toggleRecording() {
+            if (!isRecording) {
+                await startRecording();
+            } else {
+                stopRecording();
+            }
+        }
+
+        async function startRecording() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    audio: {
+                        channelCount: 1,
+                        sampleRate: 16000,
+                        echoCancellation: true,
+                        noiseSuppression: true,
+                    }
+                });
+
+                audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+                const source = audioContext.createMediaStreamSource(stream);
+                const processor = audioContext.createScriptProcessor(4096, 1, 1);
+
+                source.connect(processor);
+                processor.connect(audioContext.destination);
+
+                processor.onaudioprocess = (e) => {
+                    if (!isRecording) return;
+
+                    const audioData = e.inputBuffer.getChannelData(0);
+
+                    // Convert float32 to int16 PCM
+                    const pcmData = new Int16Array(audioData.length);
+                    for (let i = 0; i < audioData.length; i++) {
+                        const s = Math.max(-1, Math.min(1, audioData[i]));
+                        pcmData[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+                    }
+
+                    // Convert to base64
+                    const audioBase64 = btoa(String.fromCharCode(...new Uint8Array(pcmData.buffer)));
+
+                    // Send to backend
+                    if (ws && ws.readyState === WebSocket.OPEN) {
+                        ws.send(JSON.stringify({
+                            type: 'user_audio',
+                            audio: audioBase64
+                        }));
+                    }
+                };
+
+                isRecording = true;
+                recordBtn.textContent = '🔴 Stop Recording';
+                updateStatus('Recording... Speak now!', 'recording');
+
+            } catch (error) {
+                console.error('Error starting recording:', error);
+                alert('Failed to access microphone: ' + error.message);
+            }
+        }
+
+        function stopRecording() {
+            isRecording = false;
+            recordBtn.textContent = '🎤 Start Recording';
+            updateStatus('Connected - Ready to talk!', 'connected');
+
+            if (audioContext) {
+                audioContext.close();
+                audioContext = null;
+            }
+        }
+
+        async function playAudio(base64Audio) {
+            // Decode base64 to binary
+            const binaryString = atob(base64Audio);
+            const bytes = new Uint8Array(binaryString.length);
+            for (let i = 0; i < binaryString.length; i++) {
+                bytes[i] = binaryString.charCodeAt(i);
+            }
+
+            // Queue audio for playback
+            audioQueue.push(bytes);
+            if (!isPlaying) {
+                playNextAudio();
+            }
+        }
+
+        async function playNextAudio() {
+            if (audioQueue.length === 0) {
+                isPlaying = false;
+                return;
+            }
+
+            isPlaying = true;
+            const audioData = audioQueue.shift();
+
+            try {
+                const audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+                const audioBuffer = audioCtx.createBuffer(1, audioData.length / 2, 16000);
+                const channelData = audioBuffer.getChannelData(0);
+
+                // Convert PCM16 to float32
+                for (let i = 0; i < audioData.length / 2; i++) {
+                    const int16 = (audioData[i * 2 + 1] << 8) | audioData[i * 2];
+                    channelData[i] = int16 / (int16 < 0 ? 0x8000 : 0x7FFF);
+                }
+
+                const source = audioCtx.createBufferSource();
+                source.buffer = audioBuffer;
+                source.connect(audioCtx.destination);
+
+                source.onended = () => {
+                    audioCtx.close();
+                    playNextAudio();
+                };
+
+                source.start();
+            } catch (error) {
+                console.error('Error playing audio:', error);
+                playNextAudio();
+            }
+        }
+
+        function stopAudio() {
+            audioQueue = [];
+            isPlaying = false;
+            audioPlayer.pause();
+            audioPlayer.currentTime = 0;
+        }
+    </script>
+</body>
+</html>

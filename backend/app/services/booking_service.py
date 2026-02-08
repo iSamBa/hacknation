@@ -12,6 +12,7 @@ from app.models.call_result import CallResult
 from app.models.provider import Provider
 from app.schemas.booking import ConfirmBookingResponse, ShortlistItemResponse
 from app.schemas.intent import BookingIntent
+from app.services.calendar_service import create_calendar_event
 from app.services.intent_parser import parse_booking_intent
 from app.services.scoring import ScoredProvider
 
@@ -279,6 +280,34 @@ async def confirm_booking(
         provider.name,
         slot,
     )
+
+    # Create calendar event
+    try:
+        event_result = await create_calendar_event(
+            db=db,
+            user_id=str(booking.user_id),
+            provider_name=provider.name,
+            provider_address=provider.address,
+            slot=slot,
+            service_type=booking.service_type,
+            booking_id=str(booking_id),
+        )
+        if event_result:
+            logger.info(
+                "Calendar event created for booking %s: %s",
+                booking_id,
+                event_result.get("event_link"),
+            )
+        else:
+            logger.info(
+                "Calendar event not created for booking %s (calendar not connected)",
+                booking_id,
+            )
+    except Exception:
+        logger.exception(
+            "Failed to create calendar event for booking %s, continuing anyway",
+            booking_id,
+        )
 
     return ConfirmBookingResponse(
         id=booking.id,
