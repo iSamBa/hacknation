@@ -29,14 +29,22 @@ DbSession = Annotated[AsyncSession, Depends(get_db)]
     "/tools/check_calendar",
     response_model=CheckCalendarResponse,
 )
-async def check_calendar(body: CheckCalendarRequest):
+async def check_calendar(body: CheckCalendarRequest, db: DbSession):
     """Check if the patient is available at the proposed date and time.
 
     Called by the ElevenLabs agent as a server tool during
     a live conversation.
     """
-    available = await check_user_availability(body.date, body.time)
-    return CheckCalendarResponse(available=available, conflicts=[])
+    result = await check_user_availability(db, body.date, body.time)
+
+    # Format conflicts as strings for the response
+    conflicts = [
+        f"{c['start']} to {c['end']}" for c in result.get("conflicts", [])
+    ]
+
+    return CheckCalendarResponse(
+        available=result["available"], conflicts=conflicts
+    )
 
 
 @router.post(
