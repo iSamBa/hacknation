@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from enum import StrEnum
 
-from sqlalchemy import ForeignKey, Integer, String, Text
+from sqlalchemy import Enum, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -28,7 +28,9 @@ class CallResult(Base):
         ForeignKey("providers.id", ondelete="CASCADE"), index=True
     )
     conversation_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    call_outcome: Mapped[CallOutcome]
+    call_outcome: Mapped[CallOutcome] = mapped_column(
+        Enum(CallOutcome, values_callable=lambda e: [m.value for m in e])
+    )
     available_slot: Mapped[datetime | None] = mapped_column(nullable=True)
     provider_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     transcript: Mapped[dict | None] = mapped_column(JSONB, nullable=True)

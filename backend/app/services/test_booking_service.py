@@ -75,6 +75,27 @@ class TestCreateBooking:
         mock_db.commit.assert_awaited_once()
 
     @pytest.mark.asyncio
+    async def test_creates_booking_with_pre_parsed_intent(self):
+        intent = BookingIntent(
+            service_type="plumber",
+            urgency="asap",
+        )
+        user_id = uuid.uuid4()
+        mock_db = AsyncMock()
+        mock_db.refresh = AsyncMock()
+        added_objects = []
+        mock_db.add = lambda obj: added_objects.append(obj)
+
+        _booking, returned_intent = await create_booking(
+            mock_db, user_id, "Plumber ASAP", intent=intent
+        )
+
+        assert returned_intent.service_type == "plumber"
+        assert len(added_objects) == 1
+        assert added_objects[0].service_type == "plumber"
+        mock_db.commit.assert_awaited_once()
+
+    @pytest.mark.asyncio
     async def test_raises_on_parse_error(self):
         mock_db = AsyncMock()
         user_id = uuid.uuid4()

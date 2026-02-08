@@ -9,10 +9,17 @@ from app.services.intent_parser import parse_booking_intent
 
 
 async def create_booking(
-    db: AsyncSession, user_id: uuid.UUID, message: str
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    message: str,
+    intent: BookingIntent | None = None,
 ) -> tuple[Booking, BookingIntent]:
-    """Parse intent from message and create a new booking."""
-    intent = await parse_booking_intent(message)
+    """Parse intent from message and create a new booking.
+
+    If intent is provided, skip LLM parsing and use it directly.
+    """
+    if intent is None:
+        intent = await parse_booking_intent(message)
 
     booking = Booking(
         user_id=user_id,

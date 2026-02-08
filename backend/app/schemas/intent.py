@@ -44,3 +44,49 @@ class BookingIntent(BaseModel):
         if v.lower() not in allowed:
             return "flexible"
         return v.lower()
+
+
+class ChatResponse(BaseModel):
+    """LLM structured output for chat classification and intent parsing."""
+
+    is_booking_request: bool = Field(
+        description="True if the user is requesting a booking or appointment",
+    )
+    reply: str = Field(
+        description="Friendly reply to the user",
+    )
+    service_type: str | None = Field(
+        None,
+        description="Type of service if booking request (e.g. dentist, plumber)",
+    )
+    date: str | None = Field(
+        None,
+        description="ISO date (YYYY-MM-DD) if mentioned",
+    )
+    time_preference: str | None = Field(
+        None,
+        description="morning, afternoon, evening, or a specific time",
+    )
+    location_override: str | None = Field(
+        None,
+        description="Location if user specifies one different from default",
+    )
+    constraints: list[str] = Field(
+        default_factory=list,
+        description="Specific requirements mentioned",
+    )
+    urgency: str = Field(
+        default="flexible",
+        description="asap, flexible, or specific_date",
+    )
+
+    def to_booking_intent(self) -> BookingIntent:
+        """Convert to BookingIntent. Only call when is_booking_request is True."""
+        return BookingIntent(
+            service_type=self.service_type or "",
+            date=self.date,
+            time_preference=self.time_preference,
+            location_override=self.location_override,
+            constraints=self.constraints,
+            urgency=self.urgency,
+        )

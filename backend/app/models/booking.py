@@ -2,6 +2,7 @@ import uuid
 from enum import StrEnum
 
 from sqlalchemy import (
+    Enum,
     Float,
     ForeignKey,
     Integer,
@@ -35,7 +36,9 @@ class Booking(Base):
         ForeignKey("user_profiles.id", ondelete="CASCADE"), index=True
     )
     status: Mapped[BookingStatus] = mapped_column(
-        server_default=text("'searching'"), default=BookingStatus.SEARCHING
+        Enum(BookingStatus, values_callable=lambda e: [m.value for m in e]),
+        server_default=text("'searching'"),
+        default=BookingStatus.SEARCHING,
     )
     service_type: Mapped[str] = mapped_column(String(255))
     preferred_date: Mapped[str | None] = mapped_column(String(50), nullable=True)

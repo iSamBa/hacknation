@@ -3,11 +3,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from openai import APIConnectionError, RateLimitError
 
-from app.schemas.intent import BookingIntent
-from app.services.intent_parser import parse_booking_intent
+from app.schemas.intent import BookingIntent, ChatResponse
+from app.services.intent_parser import classify_and_parse, parse_booking_intent
 
 
-def _make_completion(parsed: BookingIntent | None, refusal: str | None = None):
+def _make_completion(parsed, refusal: str | None = None):
     """Build a mock ParsedChatCompletion."""
     message = MagicMock()
     message.parsed = parsed
@@ -254,3 +254,111 @@ class TestParseBookingIntent:
         ):
             with pytest.raises(ValueError, match="OpenAI API error"):
                 await parse_booking_intent("dentist")
+
+
+class TestClassifyAndParse:
+    @pytest.mark.asyncio
+    async def test_greeting_returns_non_booking(self):
+        expected = ChatResponse(
+            is_booking_request=False,
+            reply="Hello! How can I help you today?",
+        )
+        mock_parse = AsyncMock(return_value=_make_completion(expected))
+
+        with patch(
+            "app.services.intent_parser.client.chat.completions.parse",
+            mock_parse,
+        ):
+            result = await classify_and_parse("hi")
+
+        assert result.is_booking_request is False
+        assert result.reply == "Hello! How can I help you today?"
+        assert result.service_type is None
+
+    @pytest.mark.asyncio
+    async def test_booking_request_returns_intent(self):
+        expected = ChatResponse(
+            is_booking_request=True,
+            reply="I'll find a dentist for you next Tuesday afternoon.",
+            service_type="dentist",
+            date="2026-02-10",
+            time_preference="afternoon",
+            urgency="specific_date",
+        )
+        mock_parse = AsyncMock(return_value=_make_completion(expected))
+
+        with patch(
+            "app.services.intent_parser.client.chat.completions.parse",
+            mock_parse,
+        ):
+            result = await classify_and_parse(
+                "I need a dentist next Tuesday afternoon"
+            )
+
+        assert result.is_booking_request is True
+        assert result.service_type == "dentist"
+        assert result.date == "2026-02-10"
+
+    @pytest.mark.asyncio
+    async def test_to_booking_intent_conversion(self):
+        chat_response = ChatResponse(
+            is_booking_request=True,
+            reply="Got it!",
+            service_type="plumber",
+            date="2026-02-12",
+            time_preference="morning",
+            location_override="downtown",
+            constraints=["emergency"],
+            urgency="asap",
+        )
+        intent = chat_response.to_booking_intent()
+        assert isinstance(intent, BookingIntent)
+        assert intent.service_type == "plumber"
+        assert intent.date == "2026-02-12"
+        assert intent.urgency == "asap"
+
+    @pytest.mark.asyncio
+    async def test_empty_message_raises_error(self):
+        with pytest.raises(ValueError, match="Message cannot be empty"):
+            await classify_and_parse("")
+
+    @pytest.mark.asyncio
+    async def test_uses_chat_response_format(self):
+        expected = ChatResponse(
+            is_booking_request=False,
+            reply="Hi there!",
+        )
+        mock_parse = AsyncMock(return_value=_make_completion(expected))
+
+        with patch(
+            "app.services.intent_parser.client.chat.completions.parse",
+            mock_parse,
+        ):
+            await classify_and_parse("hello")
+
+        call_kwargs = mock_parse.call_args.kwargs
+        assert call_kwargs["response_format"] is ChatResponse
+
+    @pytest.mark.asyncio
+    async def test_api_error_raises_value_error(self):
+        mock_parse = AsyncMock(
+            side_effect=APIConnectionError(request=MagicMock())
+        )
+
+        with patch(
+            "app.services.intent_parser.client.chat.completions.parse",
+            mock_parse,
+        ):
+            with pytest.raises(ValueError, match="OpenAI API error"):
+                await classify_and_parse("hi")
+
+    @pytest.mark.asyncio
+    async def test_none_parsed_raises_error(self):
+        mock_parse = AsyncMock(return_value=_make_completion(None))
+
+        with patch(
+            "app.services.intent_parser.client.chat.completions.parse",
+            mock_parse,
+        ):
+            with pytest.raises(ValueError, match="Failed to process"):
+                await classify_and_parse("hi")
