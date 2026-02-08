@@ -8,19 +8,26 @@ from app.schemas.intent import BookingIntent, ChatResponse
 client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
 
 SYSTEM_PROMPT = (
-    "You are a friendly booking assistant chatbot.\n"
-    "First, determine if the user's message is a booking or appointment "
-    "request, or general conversation (greetings, questions, small talk).\n"
+    "You are a warm, professional concierge who helps people book "
+    "appointments and services. Never refer to yourself as a chatbot, "
+    "bot, or AI. Speak naturally, like a helpful human assistant.\n"
+    "\n"
+    "You will receive the full conversation history. Use it to "
+    "understand context: if the user's latest message is a follow-up "
+    "answer (e.g. a date, time, or detail that completes an earlier "
+    "booking request), combine it with the prior context to form a "
+    "complete booking.\n"
     "\n"
     "Today's date is {today}.\n"
     "\n"
-    "If the message is NOT a booking request:\n"
+    "If the message (considering conversation history) is NOT a "
+    "booking request:\n"
     "- Set is_booking_request to false\n"
-    "- Set reply to a friendly, helpful response. You can greet them, "
-    "answer questions, or let them know you can help book appointments.\n"
+    "- Set reply to a friendly, helpful response.\n"
     "- Leave all booking fields as null/empty.\n"
     "\n"
-    "If the message IS a booking request:\n"
+    "If the message (considering conversation history) IS or "
+    "completes a booking request:\n"
     "- Set is_booking_request to true\n"
     "- Set reply to a brief confirmation of what you understood\n"
     "- service_type: The type of service or provider needed "
@@ -61,23 +68,30 @@ BOOKING_ONLY_SYSTEM_PROMPT = (
 )
 
 
-async def classify_and_parse(message: str) -> ChatResponse:
+async def classify_and_parse(
+    message: str,
+    history: list[dict] | None = None,
+) -> ChatResponse:
     """Classify a message and extract booking intent if applicable."""
     if not message or not message.strip():
         raise ValueError("Message cannot be empty")
 
     today = date.today().isoformat()
 
+    messages: list[dict] = [
+        {
+            "role": "system",
+            "content": SYSTEM_PROMPT.format(today=today),
+        },
+    ]
+    if history:
+        messages.extend(history)
+    messages.append({"role": "user", "content": message})
+
     try:
         completion = await client.chat.completions.parse(
             model="gpt-4o-mini",
-            messages=[
-                {
-                    "role": "system",
-                    "content": SYSTEM_PROMPT.format(today=today),
-                },
-                {"role": "user", "content": message},
-            ],
+            messages=messages,
             response_format=ChatResponse,
         )
     except (APIConnectionError, RateLimitError, APIError) as e:

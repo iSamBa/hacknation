@@ -353,6 +353,58 @@ class TestClassifyAndParse:
                 await classify_and_parse("hi")
 
     @pytest.mark.asyncio
+    async def test_history_threaded_to_messages(self):
+        expected = ChatResponse(
+            is_booking_request=True,
+            reply="Got it, a generalist doctor from tomorrow!",
+            service_type="generalist doctor",
+            date="2026-02-09",
+            urgency="specific_date",
+        )
+        mock_parse = AsyncMock(return_value=_make_completion(expected))
+        history = [
+            {"role": "user", "content": "I need a generalist doctor"},
+            {"role": "assistant", "content": "Sure! What date works for you?"},
+        ]
+
+        with patch(
+            "app.services.intent_parser.client.chat.completions.parse",
+            mock_parse,
+        ):
+            result = await classify_and_parse("from tomorrow", history=history)
+
+        call_kwargs = mock_parse.call_args.kwargs
+        msgs = call_kwargs["messages"]
+        assert msgs[0]["role"] == "system"
+        assert msgs[1] == {"role": "user", "content": "I need a generalist doctor"}
+        assert msgs[2] == {
+            "role": "assistant",
+            "content": "Sure! What date works for you?",
+        }
+        assert msgs[3] == {"role": "user", "content": "from tomorrow"}
+        assert result.is_booking_request is True
+
+    @pytest.mark.asyncio
+    async def test_no_history_sends_only_system_and_user(self):
+        expected = ChatResponse(
+            is_booking_request=False,
+            reply="Hi there!",
+        )
+        mock_parse = AsyncMock(return_value=_make_completion(expected))
+
+        with patch(
+            "app.services.intent_parser.client.chat.completions.parse",
+            mock_parse,
+        ):
+            await classify_and_parse("hello")
+
+        call_kwargs = mock_parse.call_args.kwargs
+        msgs = call_kwargs["messages"]
+        assert len(msgs) == 2
+        assert msgs[0]["role"] == "system"
+        assert msgs[1] == {"role": "user", "content": "hello"}
+
+    @pytest.mark.asyncio
     async def test_none_parsed_raises_error(self):
         mock_parse = AsyncMock(return_value=_make_completion(None))
 

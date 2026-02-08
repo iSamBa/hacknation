@@ -1,5 +1,6 @@
 import logging
 import uuid
+from datetime import datetime
 
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -7,8 +8,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload, selectinload
 
 from app.models.booking import Booking, BookingProvider, BookingStatus
+from app.models.call_result import CallResult
 from app.models.provider import Provider
-from app.schemas.booking import ShortlistItemResponse
+from app.schemas.booking import ConfirmBookingResponse, ShortlistItemResponse
 from app.schemas.intent import BookingIntent
 from app.services.intent_parser import parse_booking_intent
 from app.services.scoring import ScoredProvider
@@ -175,3 +177,113 @@ async def get_shortlist(
         )
         for bp in booking_providers
     ]
+
+
+async def confirm_booking(
+    db: AsyncSession,
+    booking_id: uuid.UUID,
+    provider_id: uuid.UUID,
+    slot: datetime,
+) -> ConfirmBookingResponse:
+    """Confirm a booking with the selected provider and slot.
+
+    Args:
+        db: Database session.
+        booking_id: The booking to confirm.
+        provider_id: The chosen provider.
+        slot: The chosen appointment slot.
+
+    Returns:
+        Confirmation response with booking and provider details.
+
+    Raises:
+        ValueError: If booking not found, wrong status, or provider invalid.
+    """
+    # Load booking with row lock to prevent concurrent confirmations
+    result = await db.execute(
+        select(Booking)
+        .where(Booking.id == booking_id)
+        .with_for_update()
+    )
+    booking = result.scalar_one_or_none()
+    if booking is None:
+        raise ValueError(f"Booking {booking_id} not found")
+
+    # Allow idempotent re-confirmation
+    if booking.status == BookingStatus.CONFIRMED:
+        # Load provider to return the same response
+        result = await db.execute(
+            select(Provider).where(Provider.id == provider_id)
+        )
+        provider = result.scalar_one_or_none()
+        if provider is None:
+            raise ValueError(f"Provider {provider_id} not found")
+        return ConfirmBookingResponse(
+            id=booking.id,
+            status=booking.status,
+            provider_name=provider.name,
+            provider_address=provider.address,
+            slot=slot,
+        )
+
+    if booking.status != BookingStatus.OPTIONS_READY:
+        raise ValueError(
+            f"Booking must be in options_ready status to confirm, "
+            f"current status: {booking.status}"
+        )
+
+    # Verify provider was shortlisted for this booking
+    result = await db.execute(
+        select(BookingProvider)
+        .where(
+            BookingProvider.booking_id == booking_id,
+            BookingProvider.provider_id == provider_id,
+        )
+    )
+    bp = result.scalar_one_or_none()
+    if bp is None:
+        raise ValueError(
+            f"Provider {provider_id} is not in the shortlist for booking {booking_id}"
+        )
+
+    # Verify the slot was actually offered by this provider
+    result = await db.execute(
+        select(CallResult)
+        .where(
+            CallResult.booking_id == booking_id,
+            CallResult.provider_id == provider_id,
+            CallResult.available_slot == slot,
+        )
+    )
+    call_result = result.scalar_one_or_none()
+    if call_result is None:
+        raise ValueError(
+            f"Slot {slot} was not offered by provider {provider_id}"
+        )
+
+    # Load provider details
+    result = await db.execute(
+        select(Provider).where(Provider.id == provider_id)
+    )
+    provider = result.scalar_one_or_none()
+    if provider is None:
+        raise ValueError(f"Provider {provider_id} not found")
+
+    # Update booking status
+    booking.status = BookingStatus.CONFIRMED
+    await db.commit()
+
+    logger.info(
+        "Booking %s confirmed with provider %s at %s",
+        booking_id,
+        provider.name,
+        slot,
+    )
+
+    return ConfirmBookingResponse(
+        id=booking.id,
+        status=booking.status,
+        provider_name=provider.name,
+        provider_address=provider.address,
+        slot=slot,
+    )

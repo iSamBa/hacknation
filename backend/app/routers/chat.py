@@ -19,8 +19,10 @@ DbSession = Annotated[AsyncSession, Depends(get_db)]
 async def chat_endpoint(body: ChatMessageRequest, db: DbSession):
     user = await get_or_create_default_user(db)
 
+    history = [msg.model_dump() for msg in body.history]
+
     try:
-        chat_response = await classify_and_parse(body.message)
+        chat_response = await classify_and_parse(body.message, history=history)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
 

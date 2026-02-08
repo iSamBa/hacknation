@@ -26,6 +26,20 @@ export interface ShortlistItem {
   was_called: boolean;
 }
 
+export interface ResultItem {
+  rank: number;
+  provider_name: string;
+  place_id: string;
+  slot: string;
+  travel_minutes: number | null;
+  rating: number;
+  review_count: number;
+  score: number;
+  notes: string | null;
+  provider_id: string;
+  call_outcome: string;
+}
+
 export interface BookingDetail {
   id: string;
   status: string;
@@ -35,4 +49,12 @@ export interface BookingDetail {
   location_override: string | null;
   raw_message: string;
   created_at: string;
+}
+
+export interface ConfirmBookingResponse {
+  id: string;
+  status: string;
+  provider_name: string;
+  provider_address: string;
+  slot: string;
 }

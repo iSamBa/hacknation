@@ -16,6 +16,10 @@ vi.mock("@/lib/hooks/use-booking-status", () => ({
   }),
 }));
 
+vi.mock("@/components/booking/confirmation-dialog", () => ({
+  ConfirmationDialog: () => null,
+}));
+
 const BOOKING = {
   id: "abc-123",
   status: "shortlisting",
@@ -67,7 +71,7 @@ describe("BookingDetailView", () => {
     render(<BookingDetailView bookingId="abc-123" />);
 
     await waitFor(() => {
-      expect(screen.getByText("Pipeline Progress")).toBeInTheDocument();
+      expect(screen.getByText("Pipeline")).toBeInTheDocument();
     });
 
     expect(screen.getByText("Searching")).toBeInTheDocument();

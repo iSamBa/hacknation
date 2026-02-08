@@ -102,3 +102,32 @@ class ShortlistItemResponse(BaseModel):
     pre_score: float
     provider_id: uuid.UUID
     was_called: bool
+
+
+class RankedResultResponse(BaseModel):
+    rank: int
+    provider_name: str
+    place_id: str
+    slot: datetime
+    travel_minutes: float | None
+    rating: float
+    review_count: int
+    score: float
+    notes: str | None
+    provider_id: uuid.UUID
+    call_outcome: str
+
+
+class ConfirmBookingRequest(BaseModel):
+    provider_id: uuid.UUID
+    slot: datetime
+
+
+class ConfirmBookingResponse(BaseModel):
+    id: uuid.UUID
+    status: BookingStatus
+    provider_name: str
+    provider_address: str
+    slot: datetime
+
+    model_config = {"from_attributes": True}

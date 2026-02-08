@@ -69,7 +69,7 @@ export function PipelineProgress({
   className,
 }: PipelineProgressProps) {
   const isFailed = status === "call_failed";
-  const currentIndex = getPhaseIndex(isFailed ? "searching" : status);
+  const currentIndex = getPhaseIndex(isFailed ? "calling" : status);
 
   return (
     <div className={cn("flex flex-col gap-0", className)}>
