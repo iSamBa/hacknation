@@ -6,11 +6,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.core.database import engine
 from app.routers import bookings, chat, users
+from app.services.pipeline import shutdown_pipeline_tasks
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     yield
+    await shutdown_pipeline_tasks()
     await engine.dispose()
 
 

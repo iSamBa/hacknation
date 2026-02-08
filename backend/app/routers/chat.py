@@ -7,6 +7,7 @@ from app.core.deps import get_db
 from app.schemas.chat import ChatMessageRequest, ChatMessageResponse
 from app.services.booking_service import create_booking
 from app.services.intent_parser import classify_and_parse
+from app.services.pipeline import start_pipeline
 from app.services.user_service import get_or_create_default_user
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
@@ -35,6 +36,7 @@ async def chat_endpoint(body: ChatMessageRequest, db: DbSession):
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
 
+    start_pipeline(booking.id)
     return ChatMessageResponse(
         is_booking_request=True,
         reply=chat_response.reply,

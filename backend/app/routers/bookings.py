@@ -17,6 +17,7 @@ from app.services.booking_service import (
     get_shortlist,
     list_bookings,
 )
+from app.services.pipeline import start_pipeline
 from app.services.user_service import get_or_create_default_user
 
 router = APIRouter(prefix="/api/bookings", tags=["bookings"])
@@ -31,6 +32,7 @@ async def create_booking_endpoint(body: BookingRequest, db: DbSession):
         booking, intent = await create_booking(db, user.id, body.message)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
+    start_pipeline(booking.id)
     return BookingRequestResponse(
         booking_id=booking.id,
         status=booking.status,
