@@ -11,7 +11,6 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -25,6 +24,7 @@ import { TimePreferences } from "@/components/preferences/time-preferences";
 import { DaySelector } from "@/components/preferences/day-selector";
 import { DistanceSlider } from "@/components/preferences/distance-slider";
 import { RatingSlider } from "@/components/preferences/rating-slider";
+import { AddressAutocomplete } from "@/components/preferences/address-autocomplete";
 import {
   useUserProfile,
   type UserProfileUpdate,
@@ -46,6 +46,8 @@ export default function PreferencesPage() {
   const [saving, setSaving] = useState(false);
 
   const [address, setAddress] = useState("");
+  const [latitude, setLatitude] = useState(0);
+  const [longitude, setLongitude] = useState(0);
   const [preferredTimes, setPreferredTimes] = useState<string[]>([]);
   const [preferredDays, setPreferredDays] = useState<string[]>([]);
   const [maxDistance, setMaxDistance] = useState(10);
@@ -58,6 +60,8 @@ export default function PreferencesPage() {
     if (profile && profile.id !== profileIdRef.current) {
       profileIdRef.current = profile.id;
       setAddress(profile.address);
+      setLatitude(profile.latitude);
+      setLongitude(profile.longitude);
       setPreferredTimes(profile.preferred_times);
       setPreferredDays(profile.preferred_days);
       setMaxDistance(profile.max_distance_km);
@@ -71,6 +75,8 @@ export default function PreferencesPage() {
     try {
       const data: UserProfileUpdate = {
         address,
+        latitude,
+        longitude,
         preferred_times: preferredTimes,
         preferred_days: preferredDays,
         max_distance_km: maxDistance,
@@ -86,6 +92,8 @@ export default function PreferencesPage() {
     }
   }, [
     address,
+    latitude,
+    longitude,
     preferredTimes,
     preferredDays,
     maxDistance,
@@ -129,11 +137,13 @@ export default function PreferencesPage() {
         <CardContent>
           <div className="space-y-2">
             <Label htmlFor="address">Address</Label>
-            <Input
-              id="address"
-              placeholder="Enter your address"
+            <AddressAutocomplete
               value={address}
-              onChange={(e) => setAddress(e.target.value)}
+              onChange={setAddress}
+              onAddressSelect={(data) => {
+                setLatitude(data.latitude);
+                setLongitude(data.longitude);
+              }}
             />
           </div>
         </CardContent>
