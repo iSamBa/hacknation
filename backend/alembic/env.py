@@ -8,7 +8,7 @@ from app.config import settings
 from app.core.database import Base
 
 # Import all models here for Alembic autogenerate to detect them.
-# Example: from app.models.user import User
+from app.models.user import UserProfile  # noqa: F401
 
 config = context.config
 
