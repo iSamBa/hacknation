@@ -5,17 +5,25 @@ import Link from "next/link";
 import {
   ArrowLeftIcon,
   CalendarIcon,
+  CheckCircle2Icon,
   ClockIcon,
   MapPinIcon,
   MessageSquareQuoteIcon,
 } from "lucide-react";
 import { apiGet } from "@/lib/api";
-import type { BookingDetail, ShortlistItem } from "@/lib/types/booking";
+import type {
+  BookingDetail,
+  ConfirmBookingResponse,
+  ResultItem,
+  ShortlistItem,
+} from "@/lib/types/booking";
 import { useBookingStatus } from "@/lib/hooks/use-booking-status";
 import {
   PipelineProgress,
   type PhaseData,
 } from "@/components/booking/pipeline-progress";
+import { ConfirmationDialog } from "@/components/booking/confirmation-dialog";
+import { ResultsList } from "@/components/booking/results-list";
 import { StatusBadge } from "@/components/booking/status-badge";
 import {
   Card,
@@ -34,10 +42,16 @@ export function BookingDetailView({ bookingId }: BookingDetailViewProps) {
   const [booking, setBooking] = useState<BookingDetail | null>(null);
   const [shortlist, setShortlist] = useState<ShortlistItem[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [selectedResult, setSelectedResult] = useState<ResultItem | null>(null);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [confirmation, setConfirmation] =
+    useState<ConfirmBookingResponse | null>(null);
   const { status: wsStatus, providerCount } = useBookingStatus(bookingId);
   const hasRefetchedRef = useRef(false);
 
-  const displayStatus = wsStatus ?? booking?.status ?? null;
+  const displayStatus = confirmation
+    ? "confirmed"
+    : (wsStatus ?? booking?.status ?? null);
 
   const fetchShortlist = useCallback(() => {
     apiGet<ShortlistItem[]>(`/api/bookings/${bookingId}/shortlist`)
@@ -135,6 +149,69 @@ export function BookingDetailView({ bookingId }: BookingDetailViewProps) {
           <PipelineProgress status={displayStatus} phaseData={phaseData} />
         </CardContent>
       </Card>
+
+      {/* Confirmed Summary */}
+      {confirmation && (
+        <Card className="border-green-200 dark:border-green-800">
+          <CardContent className="pt-5">
+            <div className="flex items-start gap-3">
+              <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-green-100 dark:bg-green-900/30">
+                <CheckCircle2Icon className="size-5 text-green-600 dark:text-green-400" />
+              </div>
+              <div className="space-y-1">
+                <p className="text-sm font-semibold">
+                  {confirmation.provider_name}
+                </p>
+                <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <MapPinIcon className="size-3 shrink-0" />
+                  {confirmation.provider_address}
+                </div>
+                <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                  <span className="flex items-center gap-1">
+                    <CalendarIcon className="size-3" />
+                    {new Date(confirmation.slot).toLocaleDateString("en-US", {
+                      weekday: "short",
+                      month: "short",
+                      day: "numeric",
+                    })}
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <ClockIcon className="size-3" />
+                    {new Date(confirmation.slot).toLocaleTimeString("en-US", {
+                      hour: "numeric",
+                      minute: "2-digit",
+                      hour12: true,
+                    })}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Results List (only when options_ready and not yet confirmed) */}
+      {displayStatus === "options_ready" && !confirmation && (
+        <ResultsList
+          bookingId={bookingId}
+          onSelect={(result) => {
+            setSelectedResult(result);
+            setDialogOpen(true);
+          }}
+        />
+      )}
+
+      {/* Confirmation Dialog */}
+      <ConfirmationDialog
+        bookingId={bookingId}
+        result={selectedResult}
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        onConfirmed={(response) => {
+          setConfirmation(response);
+          setDialogOpen(false);
+        }}
+      />
 
       {/* Original request */}
       <Card>
