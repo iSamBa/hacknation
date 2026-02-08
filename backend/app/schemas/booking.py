@@ -5,6 +5,19 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from app.models.booking import BookingStatus
+from app.schemas.intent import BookingIntent
+
+
+class BookingRequest(BaseModel):
+    message: str = Field(..., min_length=1, max_length=2000)
+
+
+class BookingRequestResponse(BaseModel):
+    booking_id: uuid.UUID
+    status: BookingStatus
+    intent: BookingIntent
+
+    model_config = {"from_attributes": True}
 
 
 class BookingCreate(BaseModel):
@@ -35,7 +48,7 @@ class BookingResponse(BaseModel):
     preferred_date: str | None
     preferred_time: str | None
     location_override: str | None
-    constraints: dict[str, Any] | None
+    constraints: Any | None
     raw_message: str
     created_at: datetime
     updated_at: datetime
