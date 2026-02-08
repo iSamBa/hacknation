@@ -102,3 +102,17 @@ class ShortlistItemResponse(BaseModel):
     pre_score: float
     provider_id: uuid.UUID
     was_called: bool
+
+
+class RankedResultResponse(BaseModel):
+    rank: int
+    provider_name: str
+    place_id: str
+    slot: datetime
+    travel_minutes: float | None
+    rating: float
+    review_count: int
+    score: float
+    notes: str | None
+    provider_id: uuid.UUID
+    call_outcome: str
