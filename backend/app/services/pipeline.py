@@ -12,6 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import async_session
+from app.core.websocket_manager import ws_manager
 from app.models.booking import Booking, BookingProvider, BookingStatus
 from app.models.user import UserProfile
 from app.services.booking_service import save_shortlist
@@ -31,7 +32,7 @@ async def _update_status(
     booking_id: uuid.UUID,
     status: BookingStatus,
 ) -> None:
-    """Transition a booking to a new status."""
+    """Transition a booking to a new status and broadcast via WebSocket."""
     result = await db.execute(
         select(Booking).where(Booking.id == booking_id)
     )
@@ -42,6 +43,10 @@ async def _update_status(
     booking.status = status
     await db.commit()
     logger.info("Booking %s → %s", booking_id, status.value)
+    await ws_manager.send_to_booking(
+        booking_id,
+        {"type": "status", "status": status.value, "booking_id": str(booking_id)},
+    )
 
 
 async def _get_user(db: AsyncSession, user_id: uuid.UUID) -> UserProfile:
