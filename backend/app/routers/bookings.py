@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import get_db
 from app.schemas.booking import (
+    BookingListResponse,
     BookingRequest,
     BookingRequestResponse,
     BookingResponse,
@@ -59,7 +60,25 @@ async def get_booking_endpoint(booking_id: uuid.UUID, db: DbSession):
     return booking
 
 
-@router.get("", response_model=list[BookingResponse])
+@router.get("", response_model=list[BookingListResponse])
 async def list_bookings_endpoint(db: DbSession):
     user = await get_or_create_default_user(db)
-    return await list_bookings(db, user.id)
+    bookings = await list_bookings(db, user.id)
+    return [
+        BookingListResponse(
+            id=b.id,
+            user_id=b.user_id,
+            status=b.status,
+            service_type=b.service_type,
+            preferred_date=b.preferred_date,
+            preferred_time=b.preferred_time,
+            location_override=b.location_override,
+            constraints=b.constraints,
+            raw_message=b.raw_message,
+            created_at=b.created_at,
+            updated_at=b.updated_at,
+            provider_count=len(b.booking_providers),
+            called_count=sum(1 for bp in b.booking_providers if bp.was_called),
+        )
+        for b in bookings
+    ]

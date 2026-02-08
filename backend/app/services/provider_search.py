@@ -95,10 +95,12 @@ async def enrich_with_phone(
         List of ProviderResult with phone numbers set, excluding
         providers without phone numbers.
     """
-    client = _get_client()
-    enriched: list[ProviderResult] = []
+    if not providers:
+        return []
 
-    for provider in providers:
+    client = _get_client()
+
+    async def _fetch_phone(provider: ProviderResult) -> ProviderResult | None:
         try:
             details = await asyncio.to_thread(
                 client.place,
@@ -114,19 +116,20 @@ async def enrich_with_phone(
                 provider.place_id,
                 e,
             )
-            continue
+            return None
 
         phone = details.get("result", {}).get("formatted_phone_number")
         if phone:
-            enriched.append(provider.model_copy(update={"phone": phone}))
-        else:
-            logger.debug(
-                "No phone number for %s (%s), skipping",
-                provider.name,
-                provider.place_id,
-            )
+            return provider.model_copy(update={"phone": phone})
+        logger.debug(
+            "No phone number for %s (%s), skipping",
+            provider.name,
+            provider.place_id,
+        )
+        return None
 
-    return enriched
+    results = await asyncio.gather(*[_fetch_phone(p) for p in providers])
+    return [r for r in results if r is not None]
 
 
 async def get_cached_providers(
@@ -144,7 +147,9 @@ async def get_cached_providers(
     if not place_ids:
         return []
 
-    cutoff = datetime.now(timezone.utc) - timedelta(days=CACHE_TTL_DAYS)
+    cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(
+        days=CACHE_TTL_DAYS
+    )
     result = await db.execute(
         select(Provider).where(
             Provider.place_id.in_(place_ids),
@@ -177,7 +182,7 @@ async def cache_providers(
     )
     existing_map = {p.place_id: p for p in result.scalars().all()}
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
     for provider in providers:
         existing = existing_map.get(provider.place_id)
 
@@ -284,22 +289,20 @@ async def search_providers(
 ) -> list[ProviderResult]:
     """Search for providers near a location by service type.
 
-    When a database session is provided, checks cache first and only
-    fetches from Google API for uncached/stale providers. Results are
-    enriched with phone numbers and cached.
-
-    When no database session is provided, performs a raw search without
-    caching (backward-compatible with Story 001).
+    Returns providers from Google Places Nearby Search. When a database
+    session is provided, merges in cached phone numbers for providers
+    that were previously enriched, but does NOT enrich new providers
+    (enrichment is deferred to after shortlisting).
 
     Args:
         service_type: Type of service to search for (e.g. "dentist").
         lat: Latitude of the search center.
         lng: Longitude of the search center.
         radius_km: Search radius in kilometers (default 10).
-        db: Optional database session for caching.
+        db: Optional database session for cache lookups.
 
     Returns:
-        List of ProviderResult objects with phone numbers.
+        List of ProviderResult objects (phone may be None for uncached).
 
     Raises:
         ValueError: If the API key is missing or the API returns an error.
@@ -310,28 +313,22 @@ async def search_providers(
     if not all_providers:
         return []
 
-    # Without DB, just enrich and return (no caching)
     if db is None:
-        return await enrich_with_phone(all_providers)
+        return all_providers
 
-    # Step 2: Check which providers are already cached and fresh
+    # Step 2: Merge cached phone numbers where available
     place_ids = [p.place_id for p in all_providers]
     cached = await get_cached_providers(db, place_ids)
-    cached_ids = {p.place_id for p in cached}
+    cached_map = {p.place_id: p for p in cached}
 
-    # Step 3: Identify uncached/stale providers needing enrichment
-    uncached = [p for p in all_providers if p.place_id not in cached_ids]
-
-    # Step 4: Enrich uncached providers with phone numbers
-    newly_enriched: list[ProviderResult] = []
-    if uncached:
-        newly_enriched = await enrich_with_phone(uncached)
-        # Cache the newly enriched providers
-        if newly_enriched:
-            await cache_providers(db, newly_enriched)
-
-    # Step 5: Combine cached + newly enriched results
-    results = [_provider_to_result(p) for p in cached]
-    results.extend(newly_enriched)
+    results: list[ProviderResult] = []
+    for provider in all_providers:
+        cached_provider = cached_map.get(provider.place_id)
+        if cached_provider and cached_provider.phone:
+            results.append(
+                provider.model_copy(update={"phone": cached_provider.phone})
+            )
+        else:
+            results.append(provider)
 
     return results

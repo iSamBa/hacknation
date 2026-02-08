@@ -518,17 +518,11 @@ class TestSearchPlaces:
 
 class TestSearchProvidersIntegrated:
     @pytest.mark.asyncio
-    @patch("app.services.provider_search.enrich_with_phone")
     @patch("app.services.provider_search._search_places")
-    async def test_without_db_enriches_and_returns(
-        self, mock_search, mock_enrich
-    ):
-        """Without db, search_providers enriches but doesn't cache."""
+    async def test_without_db_returns_raw_results(self, mock_search):
+        """Without db, search_providers returns raw results (no enrichment)."""
         mock_search.return_value = [
             _make_provider_result(place_id="p1"),
-        ]
-        mock_enrich.return_value = [
-            _make_provider_result(place_id="p1", phone="(555) 111-2222"),
         ]
 
         results = await search_providers(
@@ -536,8 +530,7 @@ class TestSearchProvidersIntegrated:
         )
 
         assert len(results) == 1
-        assert results[0].phone == "(555) 111-2222"
-        mock_enrich.assert_awaited_once()
+        assert results[0].phone is None
 
     @pytest.mark.asyncio
     @patch("app.services.provider_search._search_places")
@@ -549,14 +542,12 @@ class TestSearchProvidersIntegrated:
         assert results == []
 
     @pytest.mark.asyncio
-    @patch("app.services.provider_search.cache_providers")
-    @patch("app.services.provider_search.enrich_with_phone")
     @patch("app.services.provider_search.get_cached_providers")
     @patch("app.services.provider_search._search_places")
-    async def test_with_db_uses_cache_for_fresh_providers(
-        self, mock_search, mock_get_cached, mock_enrich, mock_cache
+    async def test_with_db_merges_cached_phone(
+        self, mock_search, mock_get_cached
     ):
-        """When all providers are cached, no enrichment or caching needed."""
+        """Cached phone numbers are merged into results."""
         cached_provider = _make_cached_provider(
             place_id="p1", phone="(555) 111-2222"
         )
@@ -572,29 +563,19 @@ class TestSearchProvidersIntegrated:
 
         assert len(results) == 1
         assert results[0].phone == "(555) 111-2222"
-        # Should NOT call enrich_with_phone for cached providers
-        mock_enrich.assert_not_awaited()
-        mock_cache.assert_not_awaited()
 
     @pytest.mark.asyncio
-    @patch("app.services.provider_search.cache_providers")
-    @patch("app.services.provider_search.enrich_with_phone")
     @patch("app.services.provider_search.get_cached_providers")
     @patch("app.services.provider_search._search_places")
-    async def test_with_db_enriches_uncached_providers(
-        self, mock_search, mock_get_cached, mock_enrich, mock_cache
+    async def test_with_db_uncached_providers_have_no_phone(
+        self, mock_search, mock_get_cached
     ):
-        """Uncached providers are enriched and then cached."""
+        """Uncached providers are returned without phone (enrichment deferred)."""
         mock_search.return_value = [
             _make_provider_result(place_id="p1"),
             _make_provider_result(place_id="p2"),
         ]
         mock_get_cached.return_value = []  # Nothing cached
-        enriched = [
-            _make_provider_result(place_id="p1", phone="(555) 111"),
-            _make_provider_result(place_id="p2", phone="(555) 222"),
-        ]
-        mock_enrich.return_value = enriched
 
         mock_db = AsyncMock()
         results = await search_providers(
@@ -602,18 +583,16 @@ class TestSearchProvidersIntegrated:
         )
 
         assert len(results) == 2
-        mock_enrich.assert_awaited_once()
-        mock_cache.assert_awaited_once_with(mock_db, enriched)
+        assert results[0].phone is None
+        assert results[1].phone is None
 
     @pytest.mark.asyncio
-    @patch("app.services.provider_search.cache_providers")
-    @patch("app.services.provider_search.enrich_with_phone")
     @patch("app.services.provider_search.get_cached_providers")
     @patch("app.services.provider_search._search_places")
     async def test_with_db_mixed_cached_and_uncached(
-        self, mock_search, mock_get_cached, mock_enrich, mock_cache
+        self, mock_search, mock_get_cached
     ):
-        """Mix of cached and uncached providers."""
+        """Mix of cached and uncached: cached get phone, uncached don't."""
         cached = _make_cached_provider(
             place_id="p1", phone="(555) 111-2222"
         )
@@ -622,10 +601,6 @@ class TestSearchProvidersIntegrated:
             _make_provider_result(place_id="p2"),
         ]
         mock_get_cached.return_value = [cached]
-        newly_enriched = [
-            _make_provider_result(place_id="p2", phone="(555) 333"),
-        ]
-        mock_enrich.return_value = newly_enriched
 
         mock_db = AsyncMock()
         results = await search_providers(
@@ -633,11 +608,10 @@ class TestSearchProvidersIntegrated:
         )
 
         assert len(results) == 2
-        # enrich should only be called with uncached providers
-        enrich_call_args = mock_enrich.call_args[0][0]
-        assert len(enrich_call_args) == 1
-        assert enrich_call_args[0].place_id == "p2"
-        mock_cache.assert_awaited_once_with(mock_db, newly_enriched)
+        p1 = next(r for r in results if r.place_id == "p1")
+        p2 = next(r for r in results if r.place_id == "p2")
+        assert p1.phone == "(555) 111-2222"
+        assert p2.phone is None
 
     @pytest.mark.asyncio
     @patch("app.services.provider_search._get_client")

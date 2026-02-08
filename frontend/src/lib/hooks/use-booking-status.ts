@@ -15,6 +15,7 @@ export interface UseBookingStatusReturn {
   status: string | null;
   isConnected: boolean;
   lastUpdate: BookingStatusUpdate | null;
+  providerCount: number | null;
 }
 
 const RECONNECT_DELAY_MS = 2000;
@@ -28,6 +29,7 @@ export function useBookingStatus(
   const [lastUpdate, setLastUpdate] = useState<BookingStatusUpdate | null>(
     null,
   );
+  const [providerCount, setProviderCount] = useState<number | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectAttempts = useRef(0);
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -62,9 +64,13 @@ export function useBookingStatus(
 
       ws.onmessage = (event) => {
         try {
-          const data: BookingStatusUpdate = JSON.parse(event.data);
-          setStatus(data.status);
-          setLastUpdate(data);
+          const data = JSON.parse(event.data);
+          if (data.type === "provider_count") {
+            setProviderCount(data.count);
+          } else {
+            setStatus(data.status);
+            setLastUpdate(data as BookingStatusUpdate);
+          }
         } catch {
           // Ignore malformed messages
         }
@@ -90,5 +96,5 @@ export function useBookingStatus(
     return cleanup;
   }, [bookingId, cleanup]);
 
-  return { status, isConnected, lastUpdate };
+  return { status, isConnected, lastUpdate, providerCount };
 }

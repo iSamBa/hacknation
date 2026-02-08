@@ -26,6 +26,9 @@ class UserProfile(Base):
     min_rating: Mapped[float] = mapped_column(
         Float, server_default=text("4.0"), default=4.0
     )
+    shortlist_count: Mapped[int] = mapped_column(
+        server_default=text("15"), default=15
+    )
     preferred_providers: Mapped[list[str]] = mapped_column(
         ARRAY(String), server_default=text("'{}'"), default=list
     )
@@ -34,5 +37,8 @@ class UserProfile(Base):
     )
     language_preference: Mapped[str] = mapped_column(
         String(50), server_default=text("'english'"), default="english"
+    )
+    transport_mode: Mapped[str] = mapped_column(
+        String(20), server_default=text("'driving'"), default="driving"
     )
     google_calendar_id: Mapped[str | None] = mapped_column(String(255), nullable=True)

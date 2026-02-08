@@ -55,6 +55,7 @@ def _parse_elements(elements: list[dict]) -> list[DistanceResult]:
 async def calculate_distances(
     origin: tuple[float, float],
     destinations: list[tuple[float, float]],
+    mode: str = "driving",
 ) -> list[DistanceResult]:
     """Calculate driving distances and durations from origin to destinations.
 
@@ -85,7 +86,7 @@ async def calculate_distances(
                 client.distance_matrix,
                 origins=[origin],
                 destinations=batch,
-                mode="driving",
+                mode=mode,
             )
         except googlemaps.exceptions.ApiError as e:
             raise ValueError(

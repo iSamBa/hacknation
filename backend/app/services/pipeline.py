@@ -18,7 +18,11 @@ from app.models.user import UserProfile
 from app.services.booking_service import save_shortlist
 from app.services.distance_service import calculate_distances
 from app.services.mock_calls import generate_mock_call_results
-from app.services.provider_search import search_providers
+from app.services.provider_search import (
+    cache_providers,
+    enrich_with_phone,
+    search_providers,
+)
 from app.services.scoring import score_providers
 
 logger = logging.getLogger(__name__)
@@ -83,8 +87,9 @@ async def run_booking_pipeline(
     Phases:
         1. Search — find providers via Google Places
         2. Shortlist — calculate distances, score, and persist top providers
-        3. Call (mock) — simulate calling shortlisted providers
-        4. Done — mark booking as ``options_ready``
+        3. Enrich — fetch phone numbers for shortlisted providers only
+        4. Call (mock) — simulate calling shortlisted providers
+        5. Done — mark booking as ``options_ready``
 
     On any failure the booking status is set to ``call_failed``.
     """
@@ -110,6 +115,15 @@ async def run_booking_pipeline(
             db=db,
         )
 
+        await ws_manager.send_to_booking(
+            booking_id,
+            {
+                "type": "provider_count",
+                "count": len(providers),
+                "booking_id": str(booking_id),
+            },
+        )
+
         if not providers:
             logger.warning(
                 "Pipeline: no providers found for booking %s", booking_id
@@ -117,11 +131,12 @@ async def run_booking_pipeline(
             await _update_status(db, booking_id, BookingStatus.CALL_FAILED)
             return
 
-        # Phase 2: Shortlist
+        # Phase 2: Shortlist (scoring works without phone numbers)
         await _update_status(db, booking_id, BookingStatus.SHORTLISTING)
         distances = await calculate_distances(
             origin=(user.latitude, user.longitude),
             destinations=[(p.latitude, p.longitude) for p in providers],
+            mode=user.transport_mode,
         )
         scored = score_providers(
             providers=providers,
@@ -129,15 +144,43 @@ async def run_booking_pipeline(
             blocked_providers=user.blocked_providers,
             preferred_providers=user.preferred_providers,
             min_rating=user.min_rating,
+            top_n=user.shortlist_count,
         )
+
+        # Phase 3: Enrich only shortlisted providers with phone numbers
+        shortlisted_providers = [s.provider for s in scored]
+        needs_phone = [p for p in shortlisted_providers if not p.phone]
+        if needs_phone:
+            enriched = await enrich_with_phone(needs_phone)
+            enriched_map = {p.place_id: p.phone for p in enriched}
+            # Update scored entries with phone numbers
+            updated_scored = []
+            for s in scored:
+                phone = enriched_map.get(s.provider.place_id, s.provider.phone)
+                if phone:
+                    updated_provider = s.provider.model_copy(
+                        update={"phone": phone}
+                    )
+                    updated_scored.append(s.model_copy(
+                        update={"provider": updated_provider}
+                    ))
+            scored = updated_scored if updated_scored else scored
+
         await save_shortlist(db, booking_id, scored)
 
-        # Phase 3: Call (mocked)
+        # Cache newly enriched providers for future lookups
+        providers_with_phone = [
+            s.provider for s in scored if s.provider.phone
+        ]
+        if providers_with_phone:
+            await cache_providers(db, providers_with_phone)
+
+        # Phase 4: Call (mocked)
         await _update_status(db, booking_id, BookingStatus.CALLING)
         booking_providers = await _get_booking_providers(db, booking_id)
         await generate_mock_call_results(db, booking_id, booking_providers)
 
-        # Phase 4: Done
+        # Phase 5: Done
         await _update_status(db, booking_id, BookingStatus.OPTIONS_READY)
         logger.info("Pipeline completed for booking %s", booking_id)
 

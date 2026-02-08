@@ -1,3 +1,4 @@
+import logging
 import uuid
 
 from sqlalchemy import select
@@ -7,7 +8,24 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.user import UserProfile
 from app.schemas.user import UserProfileUpdate
 
+logger = logging.getLogger(__name__)
+
 DEFAULT_USER_ID = uuid.UUID("00000000-0000-0000-0000-000000000001")
+
+
+async def geocode_address(address: str) -> tuple[float, float]:
+    """Geocode an address string into (latitude, longitude) using Google Maps.
+
+    Raises ValueError if the address cannot be geocoded.
+    """
+    from app.services.provider_search import _get_client
+
+    client = _get_client()
+    results = client.geocode(address)
+    if not results:
+        raise ValueError(f"Could not geocode address: {address!r}")
+    location = results[0]["geometry"]["location"]
+    return location["lat"], location["lng"]
 
 
 async def get_or_create_default_user(db: AsyncSession) -> UserProfile:
@@ -49,6 +67,26 @@ async def update_user_profile(
     user = result.scalar_one()
 
     update_data = data.model_dump(exclude_unset=True)
+
+    # Auto-geocode when address is provided without explicit coordinates
+    if update_data.get("address"):
+        if "latitude" not in update_data or "longitude" not in update_data:
+            try:
+                lat, lng = await geocode_address(update_data["address"])
+                update_data["latitude"] = lat
+                update_data["longitude"] = lng
+                logger.info(
+                    "Geocoded address %r to (%s, %s)",
+                    update_data["address"],
+                    lat,
+                    lng,
+                )
+            except ValueError:
+                logger.warning(
+                    "Failed to geocode address %r, coordinates unchanged",
+                    update_data["address"],
+                )
+
     for field, value in update_data.items():
         setattr(user, field, value)
 
