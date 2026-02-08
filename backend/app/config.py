@@ -10,7 +10,9 @@ class Settings(BaseSettings):
 
     DATABASE_URL: str = ""
     GOOGLE_MAPS_API_KEY: str | None = None
-    GOOGLE_CALENDAR_CREDENTIALS_JSON: str | None = None
+    GOOGLE_CLIENT_ID: str | None = None
+    GOOGLE_CLIENT_SECRET: str | None = None
+    TOKEN_ENCRYPTION_KEY: str | None = None
     OPENAI_API_KEY: str | None = None
     ELEVENLABS_API_KEY: str | None = None
     ELEVENLABS_AGENT_ID: str | None = None
