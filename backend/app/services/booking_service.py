@@ -4,7 +4,7 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import joinedload
+from sqlalchemy.orm import joinedload, selectinload
 
 from app.models.booking import Booking, BookingProvider, BookingStatus
 from app.models.provider import Provider
@@ -62,6 +62,7 @@ async def list_bookings(
     """List all bookings for a user, most recent first."""
     result = await db.execute(
         select(Booking)
+        .options(selectinload(Booking.booking_providers))
         .where(Booking.user_id == user_id)
         .order_by(Booking.created_at.desc())
     )
@@ -170,6 +171,7 @@ async def get_shortlist(
             travel_minutes=bp.travel_minutes,
             pre_score=bp.pre_score,
             provider_id=bp.provider_id,
+            was_called=bp.was_called,
         )
         for bp in booking_providers
     ]

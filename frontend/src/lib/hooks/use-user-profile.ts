@@ -16,9 +16,11 @@ export interface UserProfile {
   avoid_times: string[] | null;
   max_distance_km: number;
   min_rating: number;
+  shortlist_count: number;
   preferred_providers: string[];
   blocked_providers: string[];
   language_preference: string;
+  transport_mode: string;
   google_calendar_id: string | null;
   created_at: string;
   updated_at: string;

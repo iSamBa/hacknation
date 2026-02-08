@@ -11,6 +11,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -29,6 +30,13 @@ import {
   useUserProfile,
   type UserProfileUpdate,
 } from "@/lib/hooks/use-user-profile";
+
+const TRANSPORT_MODES = [
+  { value: "driving", label: "Driving" },
+  { value: "walking", label: "Walking" },
+  { value: "bicycling", label: "Bicycling" },
+  { value: "transit", label: "Public Transit" },
+];
 
 const LANGUAGES = [
   { value: "english", label: "English" },
@@ -52,6 +60,8 @@ export default function PreferencesPage() {
   const [preferredDays, setPreferredDays] = useState<string[]>([]);
   const [maxDistance, setMaxDistance] = useState(10);
   const [minRating, setMinRating] = useState(4.0);
+  const [shortlistCount, setShortlistCount] = useState(15);
+  const [transportMode, setTransportMode] = useState("driving");
   const [language, setLanguage] = useState("english");
 
   const profileIdRef = useRef<string | null>(null);
@@ -66,6 +76,8 @@ export default function PreferencesPage() {
       setPreferredDays(profile.preferred_days);
       setMaxDistance(profile.max_distance_km);
       setMinRating(profile.min_rating);
+      setShortlistCount(profile.shortlist_count);
+      setTransportMode(profile.transport_mode);
       setLanguage(profile.language_preference);
     }
   }, [profile]);
@@ -81,6 +93,8 @@ export default function PreferencesPage() {
         preferred_days: preferredDays,
         max_distance_km: maxDistance,
         min_rating: minRating,
+        shortlist_count: shortlistCount,
+        transport_mode: transportMode,
         language_preference: language,
       };
       await updateProfile(data);
@@ -98,6 +112,8 @@ export default function PreferencesPage() {
     preferredDays,
     maxDistance,
     minRating,
+    shortlistCount,
+    transportMode,
     language,
     updateProfile,
   ]);
@@ -177,6 +193,42 @@ export default function PreferencesPage() {
           <DistanceSlider value={maxDistance} onChange={setMaxDistance} />
           <Separator />
           <RatingSlider value={minRating} onChange={setMinRating} />
+          <Separator />
+          <div className="space-y-2">
+            <Label htmlFor="shortlist-count">Shortlist size</Label>
+            <p className="text-sm text-muted-foreground">
+              Number of providers to shortlist for each booking.
+            </p>
+            <Input
+              id="shortlist-count"
+              type="number"
+              min={1}
+              max={50}
+              value={shortlistCount}
+              onChange={(e) => setShortlistCount(Number(e.target.value))}
+              className="w-24"
+            />
+          </div>
+          <Separator />
+          <div className="space-y-2">
+            <Label>Transport mode</Label>
+            <p className="text-sm text-muted-foreground">
+              How you usually travel to appointments. Affects travel time
+              estimates.
+            </p>
+            <Select value={transportMode} onValueChange={setTransportMode}>
+              <SelectTrigger className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {TRANSPORT_MODES.map((mode) => (
+                  <SelectItem key={mode.value} value={mode.value}>
+                    {mode.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         </CardContent>
       </Card>
 

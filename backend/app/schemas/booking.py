@@ -56,6 +56,11 @@ class BookingResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class BookingListResponse(BookingResponse):
+    provider_count: int
+    called_count: int
+
+
 class BookingProviderCreate(BaseModel):
     booking_id: uuid.UUID
     provider_id: uuid.UUID
@@ -96,3 +101,4 @@ class ShortlistItemResponse(BaseModel):
     travel_minutes: float | None
     pre_score: float
     provider_id: uuid.UUID
+    was_called: bool

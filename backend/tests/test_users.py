@@ -19,9 +19,11 @@ def _make_user(**overrides) -> MagicMock:
         "avoid_times": None,
         "max_distance_km": 10.0,
         "min_rating": 4.0,
+        "shortlist_count": 15,
         "preferred_providers": [],
         "blocked_providers": [],
         "language_preference": "english",
+        "transport_mode": "driving",
         "google_calendar_id": None,
         "created_at": datetime(2026, 1, 1),
         "updated_at": datetime(2026, 1, 1),
@@ -76,6 +78,7 @@ async def test_get_me_returns_all_fields(client):
         assert data["preferred_days"] == ["Mon", "Tue"]
         assert data["max_distance_km"] == 15.0
         assert data["min_rating"] == 3.5
+        assert data["shortlist_count"] == 15
         assert data["language_preference"] == "french"
         assert "created_at" in data
         assert "updated_at" in data
@@ -176,9 +179,11 @@ async def test_get_me_response_matches_schema(client):
             "avoid_times",
             "max_distance_km",
             "min_rating",
+            "shortlist_count",
             "preferred_providers",
             "blocked_providers",
             "language_preference",
+            "transport_mode",
             "google_calendar_id",
             "created_at",
             "updated_at",
@@ -199,3 +204,19 @@ async def test_put_me_empty_body_succeeds(client):
     ):
         response = await client.put("/api/users/me", json={})
         assert response.status_code == 200
+
+
+async def test_put_me_validates_shortlist_count_too_low(client):
+    response = await client.put(
+        "/api/users/me",
+        json={"shortlist_count": 0},
+    )
+    assert response.status_code == 422
+
+
+async def test_put_me_validates_shortlist_count_too_high(client):
+    response = await client.put(
+        "/api/users/me",
+        json={"shortlist_count": 51},
+    )
+    assert response.status_code == 422

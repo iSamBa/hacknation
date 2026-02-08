@@ -3,8 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
-  Home,
-  Plus,
+  MessageSquare,
   List,
   Settings,
 } from "lucide-react";
@@ -18,8 +17,7 @@ import {
 } from "@/components/ui/sheet";
 
 const navItems = [
-  { href: "/", label: "Dashboard", icon: Home },
-  { href: "/bookings/new", label: "New Booking", icon: Plus },
+  { href: "/", label: "Chat", icon: MessageSquare },
   { href: "/bookings", label: "My Bookings", icon: List },
   { href: "/preferences", label: "Preferences", icon: Settings },
 ];

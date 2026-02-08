@@ -26,6 +26,7 @@ def _make_booking(**overrides) -> MagicMock:
         "raw_message": "I need a dentist",
         "created_at": datetime(2026, 2, 8),
         "updated_at": datetime(2026, 2, 8),
+        "booking_providers": [],
     }
     defaults.update(overrides)
     booking = MagicMock(spec=Booking)
@@ -215,6 +216,7 @@ async def test_get_shortlist_returns_shortlisted_providers(client):
             travel_minutes=5.0,
             pre_score=0.92,
             provider_id=uuid.uuid4(),
+            was_called=True,
         ),
         ShortlistItemResponse(
             rank=2,
@@ -226,6 +228,7 @@ async def test_get_shortlist_returns_shortlisted_providers(client):
             travel_minutes=12.0,
             pre_score=0.78,
             provider_id=uuid.uuid4(),
+            was_called=False,
         ),
     ]
 
@@ -304,6 +307,7 @@ async def test_get_shortlist_response_has_expected_keys(client):
             travel_minutes=10.0,
             pre_score=0.80,
             provider_id=uuid.uuid4(),
+            was_called=False,
         ),
     ]
 
@@ -333,4 +337,5 @@ async def test_get_shortlist_response_has_expected_keys(client):
         "travel_minutes",
         "pre_score",
         "provider_id",
+        "was_called",
     }
