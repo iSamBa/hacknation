@@ -26,6 +26,7 @@ import { DaySelector } from "@/components/preferences/day-selector";
 import { DistanceSlider } from "@/components/preferences/distance-slider";
 import { RatingSlider } from "@/components/preferences/rating-slider";
 import { AddressAutocomplete } from "@/components/preferences/address-autocomplete";
+import { CalendarConnection } from "@/components/preferences/calendar-connection";
 import {
   useUserProfile,
   type UserProfileUpdate,
@@ -257,6 +258,8 @@ export default function PreferencesPage() {
           </div>
         </CardContent>
       </Card>
+
+      <CalendarConnection />
 
       <div className="flex justify-end pb-6">
         <Button onClick={handleSave} disabled={saving}>

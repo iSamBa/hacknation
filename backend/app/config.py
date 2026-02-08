@@ -16,6 +16,8 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: str | None = None
     ELEVENLABS_API_KEY: str | None = None
     ELEVENLABS_AGENT_ID: str | None = None
+    BACKEND_URL: str = "http://localhost:8000"
+    FRONTEND_URL: str = "http://localhost:3000"
     CORS_ORIGINS: list[str] = ["http://localhost:3000"]
     DEBUG: bool = False
 
