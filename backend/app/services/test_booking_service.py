@@ -3,13 +3,17 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from app.models.booking import Booking, BookingStatus
+from app.models.booking import Booking, BookingProvider, BookingStatus
 from app.schemas.intent import BookingIntent
 from app.services.booking_service import (
     create_booking,
     get_booking,
+    get_shortlist,
     list_bookings,
+    save_shortlist,
 )
+from app.services.provider_search import ProviderResult
+from app.services.scoring import ScoredProvider
 
 
 def _make_booking(**overrides) -> MagicMock:
@@ -164,3 +168,290 @@ class TestListBookings:
         result = await list_bookings(mock_db, uuid.uuid4())
 
         assert result == []
+
+
+def _make_scored_provider(
+    place_id: str = "place_1",
+    score: float = 0.85,
+    travel_minutes: float = 10.0,
+    **provider_overrides,
+) -> ScoredProvider:
+    """Create a ScoredProvider for testing."""
+    provider_defaults = {
+        "place_id": place_id,
+        "name": "Test Provider",
+        "address": "123 Main St",
+        "latitude": 40.7128,
+        "longitude": -74.0060,
+        "rating": 4.5,
+        "review_count": 100,
+        "is_open": True,
+        "phone": "(555) 123-4567",
+    }
+    provider_defaults.update(provider_overrides)
+    return ScoredProvider(
+        provider=ProviderResult(**provider_defaults),
+        score=score,
+        travel_minutes=travel_minutes,
+    )
+
+
+def _make_db_provider(place_id: str = "place_1", **overrides) -> MagicMock:
+    """Create a mock Provider DB model."""
+    provider_id = overrides.pop("id", uuid.uuid4())
+    defaults = {
+        "id": provider_id,
+        "place_id": place_id,
+        "name": "Test Provider",
+        "address": "123 Main St",
+        "latitude": 40.7128,
+        "longitude": -74.0060,
+        "phone": "(555) 123-4567",
+        "rating": 4.5,
+        "review_count": 100,
+        "is_open": True,
+    }
+    defaults.update(overrides)
+    mock = MagicMock()
+    for k, v in defaults.items():
+        setattr(mock, k, v)
+    return mock
+
+
+class TestSaveShortlist:
+    @pytest.mark.asyncio
+    async def test_saves_scored_providers_as_booking_providers(self):
+        booking_id = uuid.uuid4()
+        db_provider = _make_db_provider(place_id="p1")
+        mock_booking = _make_booking(id=booking_id)
+
+        # First execute: Provider lookup
+        mock_provider_scalars = MagicMock()
+        mock_provider_scalars.all.return_value = [db_provider]
+        mock_provider_result = MagicMock()
+        mock_provider_result.scalars.return_value = mock_provider_scalars
+
+        # Second execute: Booking lookup
+        mock_booking_result = MagicMock()
+        mock_booking_result.scalar_one_or_none.return_value = mock_booking
+
+        mock_db = AsyncMock()
+        mock_db.execute.side_effect = [
+            mock_provider_result,
+            mock_booking_result,
+        ]
+        added_objects = []
+        mock_db.add = lambda obj: added_objects.append(obj)
+
+        scored = [_make_scored_provider(place_id="p1", score=0.9)]
+        result = await save_shortlist(mock_db, booking_id, scored)
+
+        assert len(result) == 1
+        assert result[0].booking_id == booking_id
+        assert result[0].provider_id == db_provider.id
+        assert result[0].pre_score == 0.9
+        assert result[0].rank == 1
+        assert len(added_objects) == 1
+        mock_db.commit.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_updates_booking_status_to_shortlisting(self):
+        booking_id = uuid.uuid4()
+        db_provider = _make_db_provider(place_id="p1")
+        mock_booking = _make_booking(id=booking_id)
+
+        mock_provider_scalars = MagicMock()
+        mock_provider_scalars.all.return_value = [db_provider]
+        mock_provider_result = MagicMock()
+        mock_provider_result.scalars.return_value = mock_provider_scalars
+
+        mock_booking_result = MagicMock()
+        mock_booking_result.scalar_one_or_none.return_value = mock_booking
+
+        mock_db = AsyncMock()
+        mock_db.execute.side_effect = [
+            mock_provider_result,
+            mock_booking_result,
+        ]
+        mock_db.add = MagicMock()
+
+        scored = [_make_scored_provider(place_id="p1")]
+        await save_shortlist(mock_db, booking_id, scored)
+
+        assert mock_booking.status == BookingStatus.SHORTLISTING
+
+    @pytest.mark.asyncio
+    async def test_assigns_ranks_in_order(self):
+        booking_id = uuid.uuid4()
+        db_p1 = _make_db_provider(place_id="p1")
+        db_p2 = _make_db_provider(place_id="p2")
+        mock_booking = _make_booking(id=booking_id)
+
+        mock_provider_scalars = MagicMock()
+        mock_provider_scalars.all.return_value = [db_p1, db_p2]
+        mock_provider_result = MagicMock()
+        mock_provider_result.scalars.return_value = mock_provider_scalars
+
+        mock_booking_result = MagicMock()
+        mock_booking_result.scalar_one_or_none.return_value = mock_booking
+
+        mock_db = AsyncMock()
+        mock_db.execute.side_effect = [
+            mock_provider_result,
+            mock_booking_result,
+        ]
+        added_objects = []
+        mock_db.add = lambda obj: added_objects.append(obj)
+
+        scored = [
+            _make_scored_provider(place_id="p1", score=0.9),
+            _make_scored_provider(place_id="p2", score=0.7),
+        ]
+        result = await save_shortlist(mock_db, booking_id, scored)
+
+        assert len(result) == 2
+        assert result[0].rank == 1
+        assert result[1].rank == 2
+
+    @pytest.mark.asyncio
+    async def test_skips_providers_not_in_db(self):
+        booking_id = uuid.uuid4()
+        mock_booking = _make_booking(id=booking_id)
+
+        mock_provider_scalars = MagicMock()
+        mock_provider_scalars.all.return_value = []  # No providers in DB
+        mock_provider_result = MagicMock()
+        mock_provider_result.scalars.return_value = mock_provider_scalars
+
+        mock_booking_result = MagicMock()
+        mock_booking_result.scalar_one_or_none.return_value = mock_booking
+
+        mock_db = AsyncMock()
+        mock_db.execute.side_effect = [
+            mock_provider_result,
+            mock_booking_result,
+        ]
+        mock_db.add = MagicMock()
+
+        scored = [_make_scored_provider(place_id="unknown")]
+        result = await save_shortlist(mock_db, booking_id, scored)
+
+        assert len(result) == 0
+        mock_db.add.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_empty_scored_providers_returns_empty(self):
+        mock_db = AsyncMock()
+        result = await save_shortlist(mock_db, uuid.uuid4(), [])
+        assert result == []
+        mock_db.execute.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_handles_integrity_error(self):
+        from sqlalchemy.exc import IntegrityError
+
+        booking_id = uuid.uuid4()
+        db_provider = _make_db_provider(place_id="p1")
+        mock_booking = _make_booking(id=booking_id)
+
+        mock_provider_scalars = MagicMock()
+        mock_provider_scalars.all.return_value = [db_provider]
+        mock_provider_result = MagicMock()
+        mock_provider_result.scalars.return_value = mock_provider_scalars
+
+        mock_booking_result = MagicMock()
+        mock_booking_result.scalar_one_or_none.return_value = mock_booking
+
+        mock_db = AsyncMock()
+        mock_db.execute.side_effect = [
+            mock_provider_result,
+            mock_booking_result,
+        ]
+        mock_db.add = MagicMock()
+        mock_db.commit.side_effect = IntegrityError(
+            "duplicate", {}, Exception()
+        )
+
+        scored = [_make_scored_provider(place_id="p1")]
+        result = await save_shortlist(mock_db, booking_id, scored)
+
+        assert result == []
+        mock_db.rollback.assert_awaited_once()
+
+
+class TestGetShortlist:
+    @pytest.mark.asyncio
+    async def test_returns_shortlist_items(self):
+        provider_id = uuid.uuid4()
+        db_provider = _make_db_provider(
+            place_id="p1", id=provider_id, name="Good Dentist"
+        )
+
+        bp = MagicMock(spec=BookingProvider)
+        bp.rank = 1
+        bp.pre_score = 0.85
+        bp.travel_minutes = 12.5
+        bp.provider_id = provider_id
+        bp.provider = db_provider
+
+        mock_scalars = MagicMock()
+        mock_scalars.all.return_value = [bp]
+        mock_result = MagicMock()
+        mock_result.scalars.return_value = mock_scalars
+        mock_db = AsyncMock()
+        mock_db.execute.return_value = mock_result
+
+        result = await get_shortlist(mock_db, uuid.uuid4())
+
+        assert len(result) == 1
+        assert result[0].rank == 1
+        assert result[0].provider_name == "Good Dentist"
+        assert result[0].pre_score == 0.85
+        assert result[0].travel_minutes == 12.5
+        assert result[0].place_id == "p1"
+        assert result[0].rating == 4.5
+        assert result[0].provider_id == provider_id
+
+    @pytest.mark.asyncio
+    async def test_returns_empty_when_no_shortlist(self):
+        mock_scalars = MagicMock()
+        mock_scalars.all.return_value = []
+        mock_result = MagicMock()
+        mock_result.scalars.return_value = mock_scalars
+        mock_db = AsyncMock()
+        mock_db.execute.return_value = mock_result
+
+        result = await get_shortlist(mock_db, uuid.uuid4())
+
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_returns_multiple_items_ordered(self):
+        bp1 = MagicMock(spec=BookingProvider)
+        bp1.rank = 1
+        bp1.pre_score = 0.90
+        bp1.travel_minutes = 5.0
+        bp1.provider_id = uuid.uuid4()
+        bp1.provider = _make_db_provider(place_id="p1", name="Best Dentist")
+
+        bp2 = MagicMock(spec=BookingProvider)
+        bp2.rank = 2
+        bp2.pre_score = 0.75
+        bp2.travel_minutes = 20.0
+        bp2.provider_id = uuid.uuid4()
+        bp2.provider = _make_db_provider(place_id="p2", name="OK Dentist")
+
+        mock_scalars = MagicMock()
+        mock_scalars.all.return_value = [bp1, bp2]
+        mock_result = MagicMock()
+        mock_result.scalars.return_value = mock_scalars
+        mock_db = AsyncMock()
+        mock_db.execute.return_value = mock_result
+
+        result = await get_shortlist(mock_db, uuid.uuid4())
+
+        assert len(result) == 2
+        assert result[0].rank == 1
+        assert result[0].provider_name == "Best Dentist"
+        assert result[1].rank == 2
+        assert result[1].provider_name == "OK Dentist"

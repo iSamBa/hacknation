@@ -198,3 +198,139 @@ async def test_post_bookings_response_has_expected_keys(client):
         "constraints",
         "urgency",
     }
+
+
+async def test_get_shortlist_returns_shortlisted_providers(client):
+    from app.schemas.booking import ShortlistItemResponse
+
+    booking = _make_booking()
+    shortlist = [
+        ShortlistItemResponse(
+            rank=1,
+            provider_name="Best Dentist",
+            provider_phone="(555) 111-2222",
+            place_id="p1",
+            rating=4.8,
+            review_count=200,
+            travel_minutes=5.0,
+            pre_score=0.92,
+            provider_id=uuid.uuid4(),
+        ),
+        ShortlistItemResponse(
+            rank=2,
+            provider_name="Good Dentist",
+            provider_phone="(555) 333-4444",
+            place_id="p2",
+            rating=4.5,
+            review_count=150,
+            travel_minutes=12.0,
+            pre_score=0.78,
+            provider_id=uuid.uuid4(),
+        ),
+    ]
+
+    with (
+        patch(
+            "app.routers.bookings.get_booking",
+            return_value=booking,
+        ),
+        patch(
+            "app.routers.bookings.get_shortlist",
+            return_value=shortlist,
+        ),
+    ):
+        response = await client.get(
+            f"/api/bookings/{booking.id}/shortlist"
+        )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert len(data) == 2
+    assert data[0]["rank"] == 1
+    assert data[0]["provider_name"] == "Best Dentist"
+    assert data[0]["pre_score"] == 0.92
+    assert data[0]["travel_minutes"] == 5.0
+    assert data[0]["rating"] == 4.8
+    assert data[1]["rank"] == 2
+    assert data[1]["provider_name"] == "Good Dentist"
+
+
+async def test_get_shortlist_returns_404_when_booking_not_found(client):
+    with patch(
+        "app.routers.bookings.get_booking",
+        return_value=None,
+    ):
+        response = await client.get(
+            f"/api/bookings/{uuid.uuid4()}/shortlist"
+        )
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Booking not found"
+
+
+async def test_get_shortlist_returns_empty_when_no_shortlist(client):
+    booking = _make_booking()
+
+    with (
+        patch(
+            "app.routers.bookings.get_booking",
+            return_value=booking,
+        ),
+        patch(
+            "app.routers.bookings.get_shortlist",
+            return_value=[],
+        ),
+    ):
+        response = await client.get(
+            f"/api/bookings/{booking.id}/shortlist"
+        )
+
+    assert response.status_code == 200
+    assert response.json() == []
+
+
+async def test_get_shortlist_response_has_expected_keys(client):
+    from app.schemas.booking import ShortlistItemResponse
+
+    booking = _make_booking()
+    shortlist = [
+        ShortlistItemResponse(
+            rank=1,
+            provider_name="Test",
+            provider_phone=None,
+            place_id="p1",
+            rating=4.0,
+            review_count=50,
+            travel_minutes=10.0,
+            pre_score=0.80,
+            provider_id=uuid.uuid4(),
+        ),
+    ]
+
+    with (
+        patch(
+            "app.routers.bookings.get_booking",
+            return_value=booking,
+        ),
+        patch(
+            "app.routers.bookings.get_shortlist",
+            return_value=shortlist,
+        ),
+    ):
+        response = await client.get(
+            f"/api/bookings/{booking.id}/shortlist"
+        )
+
+    data = response.json()
+    assert len(data) == 1
+    assert set(data[0].keys()) == {
+        "rank",
+        "provider_name",
+        "provider_phone",
+        "place_id",
+        "rating",
+        "review_count",
+        "travel_minutes",
+        "pre_score",
+        "provider_id",
+    }

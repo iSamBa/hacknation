@@ -84,3 +84,15 @@ class BookingProviderResponse(BaseModel):
     updated_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class ShortlistItemResponse(BaseModel):
+    rank: int | None
+    provider_name: str
+    provider_phone: str | None
+    place_id: str
+    rating: float
+    review_count: int
+    travel_minutes: float | None
+    pre_score: float
+    provider_id: uuid.UUID
