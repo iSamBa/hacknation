@@ -9,10 +9,12 @@ from app.schemas.booking import (
     BookingRequest,
     BookingRequestResponse,
     BookingResponse,
+    ShortlistItemResponse,
 )
 from app.services.booking_service import (
     create_booking,
     get_booking,
+    get_shortlist,
     list_bookings,
 )
 from app.services.user_service import get_or_create_default_user
@@ -34,6 +36,17 @@ async def create_booking_endpoint(body: BookingRequest, db: DbSession):
         status=booking.status,
         intent=intent,
     )
+
+
+@router.get(
+    "/{booking_id}/shortlist",
+    response_model=list[ShortlistItemResponse],
+)
+async def get_shortlist_endpoint(booking_id: uuid.UUID, db: DbSession):
+    booking = await get_booking(db, booking_id)
+    if booking is None:
+        raise HTTPException(status_code=404, detail="Booking not found")
+    return await get_shortlist(db, booking_id)
 
 
 @router.get("/{booking_id}", response_model=BookingResponse)
