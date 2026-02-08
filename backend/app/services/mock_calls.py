@@ -68,7 +68,7 @@ async def generate_mock_call_results(
             days_ahead = random.randint(1, 14)  # noqa: S311
             hour = random.choice([9, 10, 11, 14, 15, 16])  # noqa: S311
             available_slot = (now + timedelta(days=days_ahead)).replace(
-                hour=hour, minute=0, second=0, microsecond=0
+                hour=hour, minute=0, second=0, microsecond=0, tzinfo=None
             )
 
         notes = random.choice(_MOCK_NOTES)  # noqa: S311
@@ -77,6 +77,7 @@ async def generate_mock_call_results(
         else:
             call_duration = 15
 
+        naive_now = now.replace(tzinfo=None)
         cr = CallResult(
             booking_id=booking_id,
             provider_id=bp.provider_id,
@@ -84,8 +85,8 @@ async def generate_mock_call_results(
             available_slot=available_slot,
             provider_notes=notes,
             call_duration_seconds=call_duration,
-            started_at=now - timedelta(seconds=call_duration),
-            ended_at=now,
+            started_at=naive_now - timedelta(seconds=call_duration),
+            ended_at=naive_now,
         )
         db.add(cr)
         call_results.append(cr)
