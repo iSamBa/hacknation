@@ -13,6 +13,7 @@ dependencies = [
     "asyncpg>=0.30.0",
     "alembic>=1.14.0",
     "openai>=2.17.0",
+    "googlemaps>=4.10.0",
 ]
 
 [project.optional-dependencies]
