@@ -12,10 +12,12 @@ export interface BookingIntent {
   urgency: string;
 }
 
-export interface BookingRequestResponse {
-  booking_id: string;
-  status: string;
-  intent: BookingIntent;
+export interface ChatMessageResponse {
+  is_booking_request: boolean;
+  reply: string;
+  booking_id: string | null;
+  status: string | null;
+  intent: BookingIntent | null;
 }
 
 export interface ChatMessage {
@@ -56,20 +58,17 @@ export function useChat() {
     setIsLoading(true);
 
     try {
-      const response = await apiPost<BookingRequestResponse>(
-        "/api/bookings",
+      const response = await apiPost<ChatMessageResponse>(
+        "/api/chat",
         { message: trimmed },
       );
-
-      const intent = response.intent;
-      const serviceType = intent?.service_type ?? "unknown";
 
       const assistantMessage: ChatMessage = {
         id: nextId(),
         role: "assistant",
-        content: `I understood your request for a ${serviceType} appointment.`,
-        intent,
-        bookingId: response.booking_id,
+        content: response.reply,
+        intent: response.intent ?? undefined,
+        bookingId: response.booking_id ?? undefined,
         timestamp: new Date(),
       };
 

@@ -21,6 +21,8 @@ describe("useChat", () => {
 
   it("adds user message immediately when sending", async () => {
     mockApiPost.mockResolvedValue({
+      is_booking_request: true,
+      reply: "I'll find a dentist for you.",
       booking_id: "abc-123",
       status: "searching",
       intent: {
@@ -46,18 +48,13 @@ describe("useChat", () => {
     );
   });
 
-  it("calls POST /api/bookings with the message", async () => {
+  it("calls POST /api/chat with the message", async () => {
     mockApiPost.mockResolvedValue({
-      booking_id: "abc-123",
-      status: "searching",
-      intent: {
-        service_type: "dentist",
-        date: null,
-        time_preference: null,
-        location_override: null,
-        constraints: [],
-        urgency: "flexible",
-      },
+      is_booking_request: false,
+      reply: "Hello! How can I help?",
+      booking_id: null,
+      status: null,
+      intent: null,
     });
 
     const { result } = renderHook(() => useChat());
@@ -66,12 +63,12 @@ describe("useChat", () => {
       result.current.sendMessage("I need a dentist");
     });
 
-    expect(mockApiPost).toHaveBeenCalledWith("/api/bookings", {
+    expect(mockApiPost).toHaveBeenCalledWith("/api/chat", {
       message: "I need a dentist",
     });
   });
 
-  it("adds assistant message with intent on success", async () => {
+  it("adds assistant message with intent on booking request", async () => {
     const intent = {
       service_type: "plumber",
       date: "2026-02-12",
@@ -82,6 +79,8 @@ describe("useChat", () => {
     };
 
     mockApiPost.mockResolvedValue({
+      is_booking_request: true,
+      reply: "I'll find a plumber for you ASAP.",
       booking_id: "def-456",
       status: "searching",
       intent,
@@ -97,8 +96,36 @@ describe("useChat", () => {
 
     const assistantMsg = result.current.messages[1];
     expect(assistantMsg.role).toBe("assistant");
+    expect(assistantMsg.content).toBe("I'll find a plumber for you ASAP.");
     expect(assistantMsg.intent).toEqual(intent);
     expect(assistantMsg.bookingId).toBe("def-456");
+    expect(assistantMsg.error).toBeUndefined();
+  });
+
+  it("adds conversational reply without intent for greetings", async () => {
+    mockApiPost.mockResolvedValue({
+      is_booking_request: false,
+      reply: "Hello! How can I help you book an appointment?",
+      booking_id: null,
+      status: null,
+      intent: null,
+    });
+
+    const { result } = renderHook(() => useChat());
+
+    await act(async () => {
+      result.current.sendMessage("hi");
+    });
+
+    expect(result.current.messages).toHaveLength(2);
+
+    const assistantMsg = result.current.messages[1];
+    expect(assistantMsg.role).toBe("assistant");
+    expect(assistantMsg.content).toBe(
+      "Hello! How can I help you book an appointment?",
+    );
+    expect(assistantMsg.intent).toBeUndefined();
+    expect(assistantMsg.bookingId).toBeUndefined();
     expect(assistantMsg.error).toBeUndefined();
   });
 
@@ -122,16 +149,11 @@ describe("useChat", () => {
 
   it("sets isLoading to false after completion", async () => {
     mockApiPost.mockResolvedValue({
-      booking_id: "abc-123",
-      status: "searching",
-      intent: {
-        service_type: "dentist",
-        date: null,
-        time_preference: null,
-        location_override: null,
-        constraints: [],
-        urgency: "flexible",
-      },
+      is_booking_request: false,
+      reply: "Hi!",
+      booking_id: null,
+      status: null,
+      intent: null,
     });
 
     const { result } = renderHook(() => useChat());
@@ -157,16 +179,11 @@ describe("useChat", () => {
 
   it("assigns unique IDs to messages", async () => {
     mockApiPost.mockResolvedValue({
-      booking_id: "abc-123",
-      status: "searching",
-      intent: {
-        service_type: "dentist",
-        date: null,
-        time_preference: null,
-        location_override: null,
-        constraints: [],
-        urgency: "flexible",
-      },
+      is_booking_request: false,
+      reply: "Hi!",
+      booking_id: null,
+      status: null,
+      intent: null,
     });
 
     const { result } = renderHook(() => useChat());

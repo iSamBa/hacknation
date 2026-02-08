@@ -70,7 +70,7 @@ export function ChatContainer() {
                 <div className="bg-muted flex items-center gap-2 rounded-2xl rounded-bl-md px-4 py-2.5 text-sm">
                   <Loader2Icon className="size-4 animate-spin" />
                   <span className="text-muted-foreground">
-                    Parsing your request...
+                    Thinking...
                   </span>
                 </div>
               </div>
