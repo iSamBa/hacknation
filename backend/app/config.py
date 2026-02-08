@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     GOOGLE_MAPS_API_KEY: str | None = None
     OPENAI_API_KEY: str | None = None
     ELEVENLABS_API_KEY: str | None = None
+    ELEVENLABS_AGENT_ID: str | None = None
     CORS_ORIGINS: list[str] = ["http://localhost:3000"]
     DEBUG: bool = False
 
